@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const SUPER_ADMIN_ROLE    = 'super_admin';
 const PROTECTED_ROLES     = new Set(['super_admin']);
 const ASSIGNABLE_ROLES    = ['employee','dept_manager','hr_manager','finance_manager','team_leader','auditor','viewer','announcements'];
-const MASTER_ADMIN_EMAILS = new Set(['admin@asalmedia.so','superadmin@asalmedia.so']);
+const MASTER_ADMIN_EMAILS = new Set(['admin@asalmedia.so','superadmin@asalmedia.so','sirabdiali@gmail.com']);
 
 // ── Check if current user is the master super admin ──
 function isMasterAdmin() {
