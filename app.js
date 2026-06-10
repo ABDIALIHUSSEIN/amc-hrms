@@ -4108,10 +4108,15 @@ function saveEmployeeForm(existingId) {
   }
 
   const now   = new Date().toISOString().split('T')[0];
-  const subObj= DB.subsidiaries.find(s => (s.id||s.code?.toLowerCase()) === sub);
-  const prefix= { jiil:'JML', asal_tv:'ATV', masrax:'MPR', nasiye:'NSY' }[sub] || 'EMP';
-  const nextNum = String(DB.employees.filter(e=>e.sub===sub).length + 1).padStart(3,'0');
-  const empId = existingId || `${prefix}${nextNum}`;
+  // Auto employee ID: subsidiary prefix + 4-digit sequence (e.g. JLM0001, ASL0001).
+  const prefix= { jiil:'JLM', asal_tv:'ASL', masrax:'MSX', nasiye:'NSY' }[sub] || 'EMP';
+  // Next number = highest existing number for this prefix + 1 (robust to deletes/gaps).
+  const seqRe = new RegExp('^' + prefix + '(\\d+)$');
+  const maxNum = DB.employees.reduce((m, e) => {
+    const mt = (e.id || '').match(seqRe);
+    return mt ? Math.max(m, parseInt(mt[1], 10)) : m;
+  }, 0);
+  const empId = existingId || `${prefix}${String(maxNum + 1).padStart(4, '0')}`;
 
   const empData = {
     id:              empId,
