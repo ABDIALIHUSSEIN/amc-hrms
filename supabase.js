@@ -143,6 +143,24 @@ const Auth = {
     return saved && saved.user ? saved.user : null;
   },
 
+  // Create a real login (Supabase Auth account + role) via the secure server
+  // function. Sends the current admin's JWT so the server can authorize it.
+  // Returns the created record, or throws with a readable error message.
+  async createUserAccount(payload) {
+    const res = await fetch(`${SUPA.URL}/functions/v1/create-user`, {
+      method: 'POST',
+      headers: {
+        'apikey':        SUPA.KEY,
+        'Authorization': `Bearer ${SUPA.authToken || SUPA.KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw new Error(data.error || `Could not create login (${res.status})`);
+    return data;
+  },
+
   _store(data) {
     SUPA.authToken = data.access_token;
     const payload = {
