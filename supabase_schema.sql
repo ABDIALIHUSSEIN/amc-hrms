@@ -344,9 +344,28 @@ create policy "read"  on payroll           for select to authenticated
   using (is_finance() or employee_id = my_emp_id());
 create policy "write" on payroll           for all    to authenticated using (is_finance()) with check (is_finance());
 
--- Audit log: admins read; any authenticated action can append.
+-- Audit log: admins read; any authenticated action can append. No update/delete
+-- policy = append-only (immutable). A trigger stamps the verified actor so the
+-- "who/when/ip" can't be forged by the client (only the action text is client-set).
 create policy "read"  on audit_logs        for select to authenticated using (is_admin());
 create policy "write" on audit_logs        for insert to authenticated with check (true);
+
+create or replace function stamp_audit_actor() returns trigger
+  language plpgsql security definer set search_path = public as $$
+begin
+  if auth.jwt() is not null then
+    NEW.user_ref   := coalesce(auth.jwt() ->> 'email', NEW.user_ref);
+    NEW.user_role  := current_hr_role();
+    NEW.ip_address := coalesce(
+      split_part(nullif(current_setting('request.headers', true), '')::json ->> 'x-forwarded-for', ',', 1),
+      NEW.ip_address, 'unknown');
+  end if;
+  NEW.created_at := now();
+  NEW.time := now();
+  return NEW;
+end $$;
+drop trigger if exists trg_audit_actor on audit_logs;
+create trigger trg_audit_actor before insert on audit_logs for each row execute function stamp_audit_actor();
 
 -- ============================================================
 -- PHASE 2 — DOCUMENT-STORE MODULES (multi-user sync)
