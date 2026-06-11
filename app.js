@@ -1586,7 +1586,15 @@ function saveLeaveReq(){
 
 /* ── PAYROLL ── */
 PAGES.payroll = function(wrap) {
-  const rows=DB.payroll.map(p=>{const e=getEmp(p.empId);return e?{...p,...PayrollEngine.calc(e,p),empName:e.name,empSub:getSubName(e.sub),empDept:getDeptName(e.dept)}:null;}).filter(Boolean);
+  // Drive the register off active employees (not off pre-existing payroll rows),
+  // so a newly added employee appears immediately. Any saved payroll record for
+  // the selected month is merged in (OT, advances, status); otherwise the row
+  // defaults to Pending and is computed live from the employee's current salary.
+  const rows=filteredEmps().map(e=>{
+    const p=DB.payroll.find(x=>x.empId===e.id&&(x.month===STATE.payMonth||!x.month))
+      ||{empId:e.id,month:STATE.payMonth,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Pending'};
+    return {...p,...PayrollEngine.calc(e,p),empName:e.name,empSub:getSubName(e.sub),empDept:getDeptName(e.dept),empId:e.id,status:p.status||'Pending'};
+  });
   const sg=rows.reduce((s,r)=>s+r.grossEarnings,0),sn=rows.reduce((s,r)=>s+r.netPay,0),sd=rows.reduce((s,r)=>s+r.totalDeductions,0),st=rows.reduce((s,r)=>s+r.tax,0);
   wrap.innerHTML=`<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Payroll Management</div> <div class="page-sub">Base · Allowances · OT (×1.5) · Tax · Eid Bonus · Gratuity · Advances max 50%</div></div> <div class="page-actions"> <input type="month" class="form-control" style="width:auto" value="${STATE.payMonth}" onchange="STATE.payMonth=this.value"> <button class="btn btn-outline btn-sm" onclick="exportPayroll()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="runPayrollBatch()">${ICO.play} Run Batch</button> </div> </div> <div class="stat-grid"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Gross Payroll</div><div class="stat-val">${fmtCurrency(sg).split('.')[0]}</div></div></div> <div class="stat-card navy"><div class="stat-info"><div class="stat-label">Net Payroll</div><div class="stat-val">${fmtCurrency(sn).split('.')[0]}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Total Deductions</div><div class="stat-val">${fmtCurrency(sd).split('.')[0]}</div></div></div> <div class="stat-card purple"><div class="stat-info"><div class="stat-label">Total Tax</div><div class="stat-val">${fmtCurrency(st).split('.')[0]}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Processed</div><div class="stat-val">${rows.filter(r=>r.status==='Processed').length}/${rows.length}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Pending</div><div class="stat-val">${rows.filter(r=>r.status==='Pending').length}</div></div></div> </div> <div class="card"> <div class="card-header"><div class="card-title">Payroll Register — ${STATE.payMonth}</div> <div style="font-size:12px;color:var(--gray-500)">OT=(Base÷22÷8)×1.5 · Tax: 4%(≤$3k) 6%(≤$6k) 8%(>$6k) · Advance max 50%</div> </div> <div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>Subsidiary</th><th>Base</th><th>Allow.</th><th>OT Pay</th><th>Gross</th><th>Tax</th><th>Advance</th><th>Net Pay</th><th>Gratuity</th><th>Status</th><th>Actions</th></tr></thead> <tbody>${rows.map(r=>`<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(r.empName)}</div><div><div class="emp-name">${r.empName}</div><div class="emp-id">${r.empId}</div></div></div></td> <td style="font-size:11px">${r.empSub}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.baseSalary)}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.allowance)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.otPay>0?'var(--teal)':'var(--gray-300)'}">${r.otPay>0?fmtCurrency(r.otPay):'—'}</td> <td style="font-family:var(--mono);font-weight:700;font-size:12px">${fmtCurrency(r.grossEarnings)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--red)">-${fmtCurrency(r.tax)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.advanceDeduct>0?'var(--amber)':'var(--gray-300)'}">${r.advanceDeduct>0?`-${fmtCurrency(r.advanceDeduct)}`:'—'}</td> <td style="font-family:var(--mono);font-weight:800;color:var(--navy)">${fmtCurrency(r.netPay)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${fmtCurrency(r.gratuity)}</td> <td><span class="badge ${r.status==='Processed'?'badge-green':'badge-amber'}">${r.status}</span></td> <td><button class="btn btn-outline btn-xs" onclick="genPayslipModal('${r.empId}')">${ICO.eye}</button></td> </tr>`).join('')}</tbody> </table></div></div> </div> </div>`;
 };
@@ -1604,9 +1612,18 @@ function genPayslipModal(empId){
 }
 
 function runPayrollBatch(){
-  DB.payroll.forEach(p=>{ p.status='Processed'; if(typeof SupaWrite!=='undefined') SupaWrite.savePayroll(p); });
-  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${STATE.payMonth} (${DB.payroll.length} records)`,module:'Payroll',ip:'127.0.0.1'});
-  toast(`Payroll batch ${STATE.payMonth} processed`,'success');nav('payroll');
+  const month=STATE.payMonth;
+  const emps=filteredEmps();
+  if(!emps.length){ toast('No active employees to process','warning'); return; }
+  emps.forEach(e=>{
+    let p=DB.payroll.find(x=>x.empId===e.id&&x.month===month);
+    if(!p){ p={empId:e.id,month,baseSalary:e.salary,allowance:e.allowance,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Processed'}; DB.payroll.push(p); }
+    else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance; }
+    if(typeof SupaWrite!=='undefined') SupaWrite.savePayroll(p);
+  });
+  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
+  scheduleSave();
+  toast(`Payroll batch ${month} processed for ${emps.length} employee(s)`,'success');nav('payroll');
 }
 
 /* ── PERFORMANCE ── */
