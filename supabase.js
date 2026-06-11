@@ -65,6 +65,23 @@ const SUPA = {
   async delete(table, filter) {
     return this.fetch(`${table}?${filter}`, { method: 'DELETE' });
   },
+
+  // Call a Supabase Edge Function with the current user's JWT (for admin-gated
+  // server functions like whatsapp). Throws with a readable message on error.
+  async fn(name, payload) {
+    const res = await fetch(`${this.URL}/functions/v1/${name}`, {
+      method: 'POST',
+      headers: {
+        'apikey':        this.KEY,
+        'Authorization': `Bearer ${this.authToken || this.KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  },
 };
 
 /* ============================================================

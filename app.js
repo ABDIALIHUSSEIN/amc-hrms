@@ -236,6 +236,8 @@ function bootApp() {
   updateNavBadges();
   nav('dashboard');
   toast(`Welcome back, ${u.name.split(' ')[0]}!`, 'success');
+  // Sync WhatsApp connection status from the server (cross-device).
+  if (typeof refreshWAStatus === 'function') refreshWAStatus();
 }
 
 async function logout() {
@@ -2313,47 +2315,32 @@ function updateSMSFields() {
    Setup: meta.com/business → WhatsApp → get token + phone ID
 ═══════════════════════════════════════════════════════════ */
 
-// ── WhatsApp Cloud API config (saved in localStorage) ──
+// ── WhatsApp config ──
+// The access token now lives SERVER-SIDE (in the whatsapp Edge Function +
+// RLS-locked table), never in the browser. Locally we cache only the
+// non-secret connection status for instant UI.
 function getWAConfig() {
-  try {
-    return JSON.parse(localStorage.getItem('amc_wa_config') || '{}');
-  } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem('amc_wa_status') || '{}'); } catch { return {}; }
 }
-function saveWAConfig(cfg) {
-  localStorage.setItem('amc_wa_config', JSON.stringify(cfg));
+function saveWAStatus(cfg) {
+  localStorage.setItem('amc_wa_status', JSON.stringify(cfg || {}));
 }
 function isWAConfigured() {
-  const c = getWAConfig();
-  return !!(c.token && c.phoneId);
+  return !!getWAConfig().configured;
+}
+// Refresh the cached connection status from the server (so it's correct across
+// devices). Silently updates the local cache; the panel reads it on next open.
+async function refreshWAStatus() {
+  try {
+    if (typeof SUPA === 'undefined' || !SUPA.fn || !SUPA.authToken) return;
+    const s = await SUPA.fn('whatsapp', { action: 'status' });
+    saveWAStatus({ configured: !!s.configured, phoneId: s.phoneId || '', displayNum: s.displayNum || '' });
+  } catch (e) { /* keep cached status */ }
 }
 
-// ── Send a single WhatsApp message via Cloud API ──
+// ── Send a single WhatsApp message via the secure server function ──
 async function waSendOne(phone, message) {
-  const { token, phoneId } = getWAConfig();
-  if (!token || !phoneId) throw new Error('WhatsApp not configured');
-
-  // Normalize phone number
-  let num = phone.replace(/\D/g, '');
-  if (num.startsWith('0'))   num = '252' + num.slice(1);
-  if (num.length === 9)      num = '252' + num;
-  if (!num.startsWith('252') && num.length < 12) num = '252' + num;
-
-  const res = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to:                num,
-      type:              'text',
-      text:              { preview_url: false, body: message },
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `API error ${res.status}`);
+  const data = await SUPA.fn('whatsapp', { action: 'send', to: phone, message });
   return data;
 }
 
@@ -2502,7 +2489,7 @@ function openWASetup() {
           placeholder="+252613333322"> <div style="font-size:11px;color:var(--gray-400);margin-top:3px">The number employees will see messages from</div> </div> <!-- Test send --> <div style="background:var(--gray-50);border-radius:var(--radius);padding:14px;border:1px solid var(--gray-200)"> <div style="font-size:12px;font-weight:700;color:var(--gray-700);margin-bottom:8px"> Test — Send a message to yourself</div> <div class="form-row cols-2" style="margin-bottom:0"> <div class="form-group" style="margin-bottom:0"> <input class="form-control form-control-sm" id="wa_test_phone" placeholder="+252xxxxxxxxx" value="+252613333322"> </div> <button class="btn btn-outline btn-sm" onclick="waTestSend()" style="align-self:flex-end">Send Test Message</button> </div> <div id="wa-test-result" style="font-size:12px;margin-top:8px;font-weight:600;display:none"></div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="waSetupSave()" style="background:#075E54;border-color:#075E54">Save & Connect</button> </div>`);
 }
 
-function waSetupSave() {
+async function waSetupSave() {
   const token   = document.getElementById('wa_token')?.value?.trim();
   const phoneId = document.getElementById('wa_phone_id')?.value?.trim();
   const dispNum = document.getElementById('wa_display_num')?.value?.trim();
@@ -2510,10 +2497,18 @@ function waSetupSave() {
   if (!token)   { toast('Access Token is required', 'error'); return; }
   if (!phoneId) { toast('Phone Number ID is required', 'error'); return; }
 
-  saveWAConfig({ token, phoneId, displayNum: dispNum || '+252613333322' });
-  closeModal();
-  toast('WhatsApp API configured  — you can now send messages', 'success');
-  openWhatsAppPanel(); // reopen with connected state
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) { btn.disabled = true; btn.dataset._t = btn.textContent; btn.textContent = 'Connecting…'; }
+  try {
+    const r = await SUPA.fn('whatsapp', { action: 'save_config', token, phoneId, displayNum: dispNum || '' });
+    saveWAStatus({ configured: true, phoneId: r.phoneId || phoneId, displayNum: r.displayNum || dispNum || '' });
+    closeModal();
+    toast('WhatsApp connected — credentials saved securely on the server', 'success');
+    openWhatsAppPanel();
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset._t || 'Save & Connect'; }
+    toast(err.message || 'Could not save WhatsApp settings', 'error');
+  }
 }
 
 async function waTestSend() {
@@ -2525,14 +2520,15 @@ async function waTestSend() {
   if (!token || !phoneId || !phone) { toast('Fill in token, phone ID, and test number', 'error'); return; }
   if (result) { result.style.display = 'block'; result.style.color = 'var(--gray-500)'; result.textContent = 'Sending test message…'; }
 
-  // Temporarily save for test
-  saveWAConfig({ token, phoneId });
-
   try {
-    await waSendOne(phone, 'AMC HRMS test message. WhatsApp integration is working!\n\n_Asal Media Corporation_');
-    if (result) { result.style.color = '#075E54'; result.textContent = ' Test message sent! Check your WhatsApp.'; }
+    // Pass the entered credentials inline so you can test before saving.
+    await SUPA.fn('whatsapp', {
+      action: 'send', to: phone, token, phoneId,
+      message: 'AMC HRMS test message. WhatsApp integration is working!\n\n_Asal Media Corporation_',
+    });
+    if (result) { result.style.color = '#075E54'; result.textContent = '✓ Test message sent! Check your WhatsApp.'; }
   } catch (err) {
-    if (result) { result.style.color = 'var(--red)'; result.textContent = ' Error: ' + err.message; }
+    if (result) { result.style.color = 'var(--red)'; result.textContent = '✕ Error: ' + err.message; }
   }
 }
 
