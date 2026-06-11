@@ -230,6 +230,10 @@ const SupaSync = {
     if (emps?.length) {
       DB.employees = emps.map(e => ({
         ...e,
+        // Identify employees by their human ID (e.g. ASL0001), NOT the table's
+        // internal UUID primary key. Without this, a reload would replace the
+        // employee id with a UUID and corrupt every payroll/KPI/loan reference.
+        id:           e.employee_number || e.id,
         dept:         e.department_id,
         sub:          e.subsidiary_id,
         team:         e.team_id,
