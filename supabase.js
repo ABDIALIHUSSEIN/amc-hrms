@@ -5,6 +5,23 @@
 ============================================================ */
 'use strict';
 
+// Strip HTML tag delimiters from every string in a payload before it is stored.
+// This neutralizes stored XSS at the write chokepoint: data persisted here is
+// rendered (via innerHTML) to OTHER users, so cleaning it on the way out keeps
+// every render site safe without escaping each one. Recurses into nested
+// objects/arrays (e.g. the JSONB `doc` of loans/notices). Numbers/dates/etc.
+// pass through untouched. HR free-text never legitimately needs < or >.
+function sanitizeDeep(val) {
+  if (typeof val === 'string') return val.replace(/[<>]/g, '');
+  if (Array.isArray(val)) return val.map(sanitizeDeep);
+  if (val && typeof val === 'object') {
+    const out = {};
+    for (const k in val) out[k] = sanitizeDeep(val[k]);
+    return out;
+  }
+  return val;
+}
+
 const SUPA = {
   URL: 'https://lxpqnlrdnsmzhvnfrgwl.supabase.co',
   KEY: 'sb_publishable_axozTSrqIVRABArAnSuSqg_iySXJ115',
@@ -47,18 +64,19 @@ const SUPA = {
 
   async select(table, query = '') { return this.fetch(`${table}?${query}`); },
   async insert(table, data) {
-    return this.fetch(table, { method: 'POST', body: JSON.stringify(data) });
+    return this.fetch(table, { method: 'POST', body: JSON.stringify(sanitizeDeep(data)) });
   },
   async update(table, filter, data) {
-    return this.fetch(`${table}?${filter}`, { method: 'PATCH', body: JSON.stringify(data) });
+    return this.fetch(`${table}?${filter}`, { method: 'PATCH', body: JSON.stringify(sanitizeDeep(data)) });
   },
   async upsert(table, data, onConflict) {
     // onConflict: unique column(s) to resolve on when the payload has no PK
     // (e.g. employees are upserted by employee_number, not id)
     const endpoint = onConflict ? `${table}?on_conflict=${onConflict}` : table;
+    const rows = sanitizeDeep(Array.isArray(data) ? data : [data]);
     return this.fetch(endpoint, {
       method: 'POST',
-      body: JSON.stringify(Array.isArray(data) ? data : [data]),
+      body: JSON.stringify(rows),
       prefer: 'resolution=merge-duplicates,return=representation',
     });
   },

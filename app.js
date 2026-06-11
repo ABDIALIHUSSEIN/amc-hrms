@@ -1295,8 +1295,8 @@ function togglePassVis(fieldId, btn) {
 
 
 function saveNewUser() {
-  const fullname  = document.getElementById('cu_fullname')?.value?.trim() || '';
-  const username  = document.getElementById('cu_user')?.value?.trim()     || fullname.toLowerCase().replace(/\s+/g,'.').replace(/[^a-z.]/g,'');
+  const fullname  = sanitizeText(document.getElementById('cu_fullname')?.value || '');
+  const username  = sanitizeText(document.getElementById('cu_user')?.value || '')     || fullname.toLowerCase().replace(/\s+/g,'.').replace(/[^a-z.]/g,'');
   const email     = document.getElementById('cu_email')?.value?.trim()    || '';
   const pass      = document.getElementById('cu_pass')?.value             || '';
   const pass2     = document.getElementById('cu_pass2')?.value            || '';
