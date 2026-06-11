@@ -1972,7 +1972,29 @@ function settingsInteg(){return `<div class="settings-pane"><div class="settings
 </div>`;}
 function settingsSec(){return `<div class="settings-pane"><div class="settings-pane-title">Security & Compliance</div> ${[['Two-Factor Authentication (2FA)','Required for admin roles'],['Session Timeout (8hrs)','Auto-logout on expiry'],['Audit All Changes','Track every change with user + timestamp'],['Data Encryption at Rest','AES-256 for employee data']].map(([l,d])=>`<div class="toggle-row"><div><div class="toggle-label">${l}</div><div class="toggle-desc">${d}</div></div><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>`).join('')}
   <div style="margin-top:14px;padding:12px 14px;background:var(--green-l);border-radius:var(--radius);font-size:12px;color:var(--green);font-weight:600"> All security controls active · Session persistence enabled · Audit logs running</div>
+  <button class="btn btn-outline btn-sm" onclick="openSystemHealth()" style="margin-top:12px">${ICO.activity || ''} View System Error Log</button>
 </div>`;}
+
+// Admin view of captured production errors (from the client_errors table).
+async function openSystemHealth(){
+  openModal('wide', `<div class="modal-header"><span class="modal-title">System Error Log</span>${closeX()}</div><div class="modal-body"><div id="sysHealthBody" style="font-size:13px;color:var(--gray-500)">Loading…</div></div><div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+  try {
+    const rows = await SUPA.select('client_errors','select=*&order=created_at.desc&limit=50');
+    const body = document.getElementById('sysHealthBody');
+    if (!body) return;
+    if (!rows || !rows.length) { body.innerHTML = `<div class="empty-state"><p>✓ No errors recorded — system healthy.</p></div>`; return; }
+    body.innerHTML = `<div style="margin-bottom:10px;font-weight:700;color:var(--gray-700)">${rows.length} most recent error(s)</div>
+      <div style="max-height:420px;overflow:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
+      ${rows.map(r=>`<div style="padding:9px 12px;border-bottom:1px solid var(--gray-100)">
+        <div style="font-weight:600;color:var(--red);font-size:12px">${esc(r.message||'')}</div>
+        <div style="font-size:11px;color:var(--gray-400);font-family:var(--mono)">${esc(r.source||'')}</div>
+        <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${esc(String(r.created_at||'').replace('T',' ').slice(0,16))} · ${esc(r.user_email||'')} · ${esc(r.page||'')}</div>
+      </div>`).join('')}</div>`;
+  } catch(e) {
+    const body = document.getElementById('sysHealthBody');
+    if (body) body.innerHTML = `<div style="color:var(--red)">Could not load errors: ${esc(e.message)}</div>`;
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════
    MASTER EMPLOYEE PROFILE MODULE
