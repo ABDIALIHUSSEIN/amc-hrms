@@ -1422,9 +1422,22 @@ function doResetPassword(userId) {
   if (!pass || pass.length < 8) { toast('Password must be at least 8 characters','error'); return; }
   if (pass !== conf) { toast('Passwords do not match','error'); return; }
   const u = DB.users.find(x=>x.id===userId);
-  if (u) { u.failedAttempts = 0; }
-  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.user?.role||'', action:`Password reset for user ${u?.username}`, module:'Users', ip:'127.0.0.1' });
-  closeModal(); toast('Password reset successfully. User notified by email.','success');
+  if (!u) return;
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) { btn.disabled = true; btn.dataset._t = btn.textContent; btn.textContent = 'Resetting…'; }
+  (async () => {
+    try {
+      if (typeof Auth === 'undefined' || !Auth.adminResetPassword) throw new Error('Reset service unavailable — check connection');
+      await Auth.adminResetPassword(u.email, pass);
+      u.failedAttempts = 0;
+      DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.user?.role||'', action:`Password reset for ${u.username} (${u.email})`, module:'Users', ip:'browser' });
+      closeModal(); toast(`Password reset for ${u.username} — they can sign in with the new password`, 'success');
+      scheduleSave();
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset._t || 'Reset Password'; }
+      toast(err.message || 'Password reset failed', 'error');
+    }
+  })();
 }
 
 function toggleUserStatus(userId) {
