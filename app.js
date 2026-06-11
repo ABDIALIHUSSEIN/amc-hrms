@@ -1324,25 +1324,41 @@ function saveNewUser() {
     return;
   }
 
-  const id      = 'USR' + String(DB.users.length + 1).padStart(3, '0');
-  const newUser = {
-    id, username, email,
-    name:     fullname || username,
-    empId:    document.getElementById('cu_emp')?.value || '',
-    role:     roleKey,
-    status:   status,
-    lastLogin:'Never',
-    created:  new Date().toISOString().split('T')[0],
-    failedAttempts: 0,
-  };
-  DB.users.push(newUser);
-  if (typeof SupaWrite !== 'undefined') SupaWrite.saveUser(newUser);
-  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.user?.role||'', action:`Created user: ${username} with role: ${roleKey}`, module:'Users', ip:'browser' });
-  closeModal();
-  toast(`User ${username} created — Role: ${ROLES[roleKey]?.label || roleKey}`, 'success');
-  nav('users');
+  const id    = 'USR' + String(DB.users.length + 1).padStart(3, '0');
+  const empId = document.getElementById('cu_emp')?.value || '';
 
-  scheduleSave();
+  // Create the REAL login (Supabase Auth account + role) via the secure server
+  // function, then mirror it into the local directory cache for the UI.
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) { btn.disabled = true; btn.dataset._t = btn.textContent; btn.textContent = 'Creating…'; }
+
+  (async () => {
+    try {
+      if (typeof Auth === 'undefined' || !Auth.createUserAccount) {
+        throw new Error('User creation service unavailable — check connection');
+      }
+      const res = await Auth.createUserAccount({ id, email, password: pass, role: roleKey, username, empId, status });
+      const newUser = {
+        id: res.id || id, username, email,
+        name:     fullname || username,
+        empId,    role: roleKey, status,
+        lastLogin:'Never',
+        created:  new Date().toISOString().split('T')[0],
+        failedAttempts: 0,
+      };
+      DB.users.push(newUser);
+      DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.user?.role||'', action:`Created login: ${username} (${email}) — role: ${roleKey}`, module:'Users', ip:'browser' });
+      closeModal();
+      toast(`Login created for ${username} — they can sign in now`, 'success');
+      nav('users');
+      scheduleSave();
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset._t || 'Create User'; }
+      const m = /already.*registered|already.*exists|duplicate/i.test(err.message||'')
+        ? 'An account with this email already exists' : (err.message || 'Could not create user');
+      toast(m, 'error');
+    }
+  })();
 }
 
 function editUserModal(userId) {
