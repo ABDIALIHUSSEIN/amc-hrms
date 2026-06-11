@@ -666,3 +666,53 @@ function hideLoadingBanner() {
   const b = document.getElementById('supaBanner');
   if (b) b.style.display = 'none';
 }
+
+/* ============================================================
+   ErrorMonitor — self-contained production error tracking.
+   Captures uncaught JS errors + unhandled promise rejections and records
+   them to the client_errors table (admins can review). Deduped + capped so
+   a runaway error can't flood the table. Never throws itself.
+============================================================ */
+const ErrorMonitor = {
+  _sent: 0,
+  _seen: {},
+  MAX_PER_SESSION: 25,
+
+  init() {
+    if (this._inited) return;
+    this._inited = true;
+    window.addEventListener('error', (e) => {
+      this.capture(e.message, `${e.filename || ''}:${e.lineno || 0}:${e.colno || 0}`, e.error && e.error.stack);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = e.reason || {};
+      this.capture('Unhandled rejection: ' + (r.message || r), '', r.stack);
+    });
+  },
+
+  capture(message, source, stack) {
+    try {
+      message = String(message || '').slice(0, 500);
+      if (!message || this._sent >= this.MAX_PER_SESSION) return;
+      const key = message + '|' + (source || '');
+      const now = Date.now();
+      if (this._seen[key] && now - this._seen[key] < 60000) return; // dedupe within 1 min
+      this._seen[key] = now;
+      this._sent++;
+      let userEmail = 'anonymous';
+      try {
+        if (typeof STATE !== 'undefined' && STATE.user && STATE.user.email) userEmail = STATE.user.email;
+        else if (Auth.currentUser() && Auth.currentUser().email) userEmail = Auth.currentUser().email;
+      } catch (_) {}
+      SUPA.insert('client_errors', {
+        message,
+        source:     String(source || '').slice(0, 300),
+        stack:      String(stack || '').slice(0, 2000),
+        page:       (location.hash || location.pathname || '').slice(0, 200),
+        user_email: userEmail,
+        user_agent: (navigator.userAgent || '').slice(0, 200),
+      }).catch(() => {});
+    } catch (_) { /* monitoring must never break the app */ }
+  },
+};
+ErrorMonitor.init();
