@@ -1596,7 +1596,7 @@ PAGES.payroll = function(wrap) {
     return {...p,...PayrollEngine.calc(e,p),empName:e.name,empSub:getSubName(e.sub),empDept:getDeptName(e.dept),empId:e.id,status:p.status||'Pending'};
   });
   const sg=rows.reduce((s,r)=>s+r.grossEarnings,0),sn=rows.reduce((s,r)=>s+r.netPay,0),sd=rows.reduce((s,r)=>s+r.totalDeductions,0),st=rows.reduce((s,r)=>s+r.tax,0);
-  wrap.innerHTML=`<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Payroll Management</div> <div class="page-sub">Base · Allowances · OT (×1.5) · Tax · Eid Bonus · Gratuity · Advances max 50%</div></div> <div class="page-actions"> <input type="month" class="form-control" style="width:auto" value="${STATE.payMonth}" onchange="STATE.payMonth=this.value"> <button class="btn btn-outline btn-sm" onclick="exportPayroll()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="runPayrollBatch()">${ICO.play} Run Batch</button> </div> </div> <div class="stat-grid"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Gross Payroll</div><div class="stat-val">${fmtCurrency(sg).split('.')[0]}</div></div></div> <div class="stat-card navy"><div class="stat-info"><div class="stat-label">Net Payroll</div><div class="stat-val">${fmtCurrency(sn).split('.')[0]}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Total Deductions</div><div class="stat-val">${fmtCurrency(sd).split('.')[0]}</div></div></div> <div class="stat-card purple"><div class="stat-info"><div class="stat-label">Total Tax</div><div class="stat-val">${fmtCurrency(st).split('.')[0]}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Processed</div><div class="stat-val">${rows.filter(r=>r.status==='Processed').length}/${rows.length}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Pending</div><div class="stat-val">${rows.filter(r=>r.status==='Pending').length}</div></div></div> </div> <div class="card"> <div class="card-header"><div class="card-title">Payroll Register — ${STATE.payMonth}</div> <div style="font-size:12px;color:var(--gray-500)">OT=(Base÷22÷8)×1.5 · Tax: 4%(≤$3k) 6%(≤$6k) 8%(>$6k) · Advance max 50%</div> </div> <div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>Subsidiary</th><th>Base</th><th>Allow.</th><th>OT Pay</th><th>Gross</th><th>Tax</th><th>Advance</th><th>Net Pay</th><th>Gratuity</th><th>Status</th><th>Actions</th></tr></thead> <tbody>${rows.map(r=>`<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(r.empName)}</div><div><div class="emp-name">${r.empName}</div><div class="emp-id">${r.empId}</div></div></div></td> <td style="font-size:11px">${r.empSub}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.baseSalary)}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.allowance)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.otPay>0?'var(--teal)':'var(--gray-300)'}">${r.otPay>0?fmtCurrency(r.otPay):'—'}</td> <td style="font-family:var(--mono);font-weight:700;font-size:12px">${fmtCurrency(r.grossEarnings)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--red)">-${fmtCurrency(r.tax)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.advanceDeduct>0?'var(--amber)':'var(--gray-300)'}">${r.advanceDeduct>0?`-${fmtCurrency(r.advanceDeduct)}`:'—'}</td> <td style="font-family:var(--mono);font-weight:800;color:var(--navy)">${fmtCurrency(r.netPay)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${fmtCurrency(r.gratuity)}</td> <td><span class="badge ${r.status==='Processed'?'badge-green':'badge-amber'}">${r.status}</span></td> <td><button class="btn btn-outline btn-xs" onclick="genPayslipModal('${r.empId}')">${ICO.eye}</button></td> </tr>`).join('')}</tbody> </table></div></div> </div> </div>`;
+  wrap.innerHTML=`<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Payroll Management</div> <div class="page-sub">Base · Allowances · OT (×1.5) · Tax · Eid Bonus · Gratuity · Advances max 50%</div></div> <div class="page-actions"> <input type="month" class="form-control" style="width:auto" value="${STATE.payMonth}" onchange="STATE.payMonth=this.value"> <button class="btn btn-outline btn-sm" onclick="exportPayroll()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="runPayrollBatch()">${ICO.play} Run Batch</button> </div> </div> <div class="stat-grid"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Gross Payroll</div><div class="stat-val">${fmtCurrency(sg).split('.')[0]}</div></div></div> <div class="stat-card navy"><div class="stat-info"><div class="stat-label">Net Payroll</div><div class="stat-val">${fmtCurrency(sn).split('.')[0]}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Total Deductions</div><div class="stat-val">${fmtCurrency(sd).split('.')[0]}</div></div></div> <div class="stat-card purple"><div class="stat-info"><div class="stat-label">Total Tax</div><div class="stat-val">${fmtCurrency(st).split('.')[0]}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Processed</div><div class="stat-val">${rows.filter(r=>r.status==='Processed').length}/${rows.length}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Pending</div><div class="stat-val">${rows.filter(r=>r.status==='Pending').length}</div></div></div> </div> <div class="card"> <div class="card-header"><div class="card-title">Payroll Register — ${STATE.payMonth}</div> <div style="font-size:12px;color:var(--gray-500)">OT=(Base÷22÷8)×1.5 · Tax: 4%(≤$3k) 6%(≤$6k) 8%(>$6k) · Advance max 50%</div> </div> <div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>Subsidiary</th><th>Base</th><th>Allow.</th><th>OT Pay</th><th>Gross</th><th>Tax</th><th>Advance</th><th>Net Pay</th><th>Gratuity</th><th>Status</th><th>Actions</th></tr></thead> <tbody>${rows.map(r=>`<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(r.empName)}</div><div><div class="emp-name">${r.empName}</div><div class="emp-id">${r.empId}</div></div></div></td> <td style="font-size:11px">${r.empSub}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.baseSalary)}</td> <td style="font-family:var(--mono);font-size:12px">${fmtCurrency(r.allowance)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.otPay>0?'var(--teal)':'var(--gray-300)'}">${r.otPay>0?fmtCurrency(r.otPay):'—'}</td> <td style="font-family:var(--mono);font-weight:700;font-size:12px">${fmtCurrency(r.grossEarnings)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--red)">-${fmtCurrency(r.tax)}</td> <td style="font-family:var(--mono);font-size:12px;color:${r.advanceDeduct>0?'var(--amber)':'var(--gray-300)'}">${r.advanceDeduct>0?`-${fmtCurrency(r.advanceDeduct)}`:'—'}</td> <td style="font-family:var(--mono);font-weight:800;color:var(--navy)">${fmtCurrency(r.netPay)}</td> <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${fmtCurrency(r.gratuity)}</td> <td><span class="badge ${r.status==='Processed'?'badge-green':'badge-amber'}">${r.status}</span></td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" title="Edit pay inputs" onclick="openPayrollEditModal('${r.empId}')">${ICO.edit}</button><button class="btn btn-outline btn-xs" title="View payslip" onclick="genPayslipModal('${r.empId}')">${ICO.eye}</button></div></td> </tr>`).join('')}</tbody> </table></div></div> </div> </div>`;
 };
 
 function genPayslipModal(empId){
@@ -1624,6 +1624,50 @@ function runPayrollBatch(){
   DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
   toast(`Payroll batch ${month} processed for ${emps.length} employee(s)`,'success');nav('payroll');
+}
+
+// Per-employee payroll adjustments (OT, bonus, advance, deductions) for the
+// selected month. Base/allowance always come from the employee record.
+function openPayrollEditModal(empId){
+  const e=getEmp(empId); if(!e){toast('Employee not found','error');return;}
+  const month=STATE.payMonth;
+  const p=DB.payroll.find(x=>x.empId===empId&&x.month===month)||{otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0};
+  const maxAdv=PayrollEngine.maxAdvance(e.salary);
+  openModal('narrow',`
+    <div class="modal-header"><span class="modal-title">Edit Payroll — ${e.name} · ${month}</span>${closeX()}</div>
+    <div class="modal-body">
+      <div style="padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px;margin-bottom:14px">
+        Base <strong>${fmtCurrency(e.salary)}</strong> · Allowance <strong>${fmtCurrency(e.allowance||0)}</strong>
+        <span style="color:var(--gray-500)">— from employee record</span>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Overtime Hours</label><input class="form-control" id="pe_ot" type="number" min="0" step="0.5" value="${p.otHours||0}"></div>
+        <div class="form-group"><label class="form-label">Eid / Bonus ($)</label><input class="form-control" id="pe_eid" type="number" min="0" value="${p.eidBonus||0}"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Salary Advance ($)</label><input class="form-control" id="pe_adv" type="number" min="0" value="${p.advance||0}"><div style="font-size:10px;color:var(--gray-400);margin-top:2px">Max ${fmtCurrency(maxAdv)} (50%)</div></div>
+        <div class="form-group"><label class="form-label">Late Deduction ($)</label><input class="form-control" id="pe_late" type="number" min="0" value="${p.lateDeduction||0}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Absent Deduction ($)</label><input class="form-control" id="pe_absent" type="number" min="0" value="${p.absentDeduction||0}"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="savePayrollRow('${empId}')">Save</button></div>`);
+}
+
+function savePayrollRow(empId){
+  const e=getEmp(empId); if(!e)return;
+  const month=STATE.payMonth;
+  const num=id=>Math.max(0,parseFloat(document.getElementById(id)?.value||0)||0);
+  let p=DB.payroll.find(x=>x.empId===empId&&x.month===month);
+  if(!p){ p={empId,month,status:'Pending'}; DB.payroll.push(p); }
+  p.baseSalary=e.salary; p.allowance=e.allowance;
+  p.otHours=num('pe_ot'); p.eidBonus=num('pe_eid');
+  p.advance=Math.min(num('pe_adv'), PayrollEngine.maxAdvance(e.salary));
+  p.lateDeduction=num('pe_late'); p.absentDeduction=num('pe_absent');
+  if(typeof SupaWrite!=='undefined') SupaWrite.savePayroll(p);
+  scheduleSave();
+  closeModal();
+  toast(`Payroll updated for ${e.name}`,'success');
+  nav('payroll');
 }
 
 /* ── PERFORMANCE ── */
