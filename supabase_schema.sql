@@ -429,4 +429,21 @@ create policy "write" on trainings          for all    to authenticated using (i
 create policy "read"  on succession_plans   for select to authenticated using (is_admin());
 create policy "write" on succession_plans   for all    to authenticated using (is_admin()) with check (is_admin());
 
+-- Data integrity: a loan/advance/bonus must reference a real employee
+-- (blocks orphaned/demo records being pushed from a stale client).
+create or replace function validate_doc_emp() returns trigger language plpgsql as $$
+begin
+  if (NEW.doc ->> 'empId') is not null
+     and not exists (select 1 from employees where employee_number = NEW.doc ->> 'empId') then
+    raise exception 'empId % is not a real employee', NEW.doc ->> 'empId';
+  end if;
+  return NEW;
+end $$;
+drop trigger if exists trg_loans_emp on loans;
+drop trigger if exists trg_adv_emp on salary_advances;
+drop trigger if exists trg_bonus_emp on bonuses;
+create trigger trg_loans_emp  before insert or update on loans           for each row execute function validate_doc_emp();
+create trigger trg_adv_emp    before insert or update on salary_advances for each row execute function validate_doc_emp();
+create trigger trg_bonus_emp  before insert or update on bonuses         for each row execute function validate_doc_emp();
+
 select 'AMC HRMS production schema + RLS + org seed + Phase 2 doc-sync applied' as status;
