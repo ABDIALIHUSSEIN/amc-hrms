@@ -2354,7 +2354,7 @@ function openWhatsAppPanel() {
       </span> ${closeX()}
     </div> <div class="modal-body" style="padding:0"> <!-- Status bar --> <div style="background:${configured ? '#075E54' : '#92400E'};padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"> <div style="display:flex;align-items:center;gap:10px"> <div style="width:10px;height:10px;border-radius:50%;background:${configured ? '#25D366' : '#F59E0B'};flex-shrink:0"></div> <div> <div style="color:white;font-size:13px;font-weight:700">${configured ? ' WhatsApp Cloud API Connected' : 'API not configured yet'}</div> <div style="color:rgba(255,255,255,.65);font-size:11px">${configured ? 'Phone ID: ' + (cfg.phoneId||'').slice(0,8) + '…' : 'Enter your Meta WhatsApp Cloud API credentials below'}</div> </div> </div> <button onclick="openWASetup()" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.3)"> ${configured ? 'Change Settings' : ' Setup API'}
         </button> </div> ${!configured ? `
-      <!-- Setup prompt --> <div style="padding:24px;text-align:center;background:#FFFBEB;border-bottom:1px solid #FDE68A"> <div style="font-size:24px;margin-bottom:10px"></div> <div style="font-size:15px;font-weight:800;color:#92400E;margin-bottom:6px">WhatsApp Cloud API Setup Required</div> <div style="font-size:13px;color:#92400E;margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto"> This uses Meta WhatsApp Cloud API — free, works directly in your browser, no Node.js needed.
+      <!-- Setup prompt --> <div style="padding:24px;text-align:center;background:#FFFBEB;border-bottom:1px solid #FDE68A"> <div style="font-size:24px;margin-bottom:10px"></div> <div style="font-size:15px;font-weight:800;color:#92400E;margin-bottom:6px">Send now — no setup needed</div> <div style="font-size:13px;color:#92400E;margin-bottom:16px;max-width:440px;margin-left:auto;margin-right:auto"> Type a message and hit <strong>Send via WhatsApp</strong> below — it opens WhatsApp with the message ready for each employee, using the numbers already in the system. <br><br>Optional: connect the <strong>Meta Cloud API</strong> (button above) for fully automated bulk sending without clicking each one.
         </div> <button onclick="openWASetup()" class="btn btn-primary" style="background:#075E54;border-color:#075E54"> Configure Now — Takes 2 Minutes
         </button> </div>` : ''}
 
@@ -2374,8 +2374,7 @@ function openWhatsAppPanel() {
             placeholder="Type your message…&#10;&#10;Use {name} to personalize — replaced with each employee's name."
             oninput="document.getElementById('wa-chars').textContent=this.value.length+' / 1024'"
             style="font-size:13px;line-height:1.7;resize:vertical"></textarea> <div style="font-size:11px;color:var(--gray-400);margin-top:4px">{name} = employee name · *bold* · _italic_</div> </div> <!-- Progress (hidden until sending) --> <div id="wa-send-progress" style="display:none;margin-top:16px"> <div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:6px" id="wa-prog-label">Sending…</div> <div style="background:var(--gray-100);border-radius:99px;height:8px;overflow:hidden"> <div id="wa-prog-bar" style="height:100%;background:linear-gradient(90deg,#075E54,#25D366);border-radius:99px;width:0%;transition:width .3s"></div> </div> <div id="wa-prog-count" style="font-size:11px;color:var(--gray-400);margin-top:4px">0 sent</div> </div> </div> </div> <div class="modal-footer" style="justify-content:space-between;flex-wrap:wrap;gap:8px"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button id="wa-send-btn" onclick="waStartBroadcast()"
-        style="background:${configured ? 'linear-gradient(135deg,#075E54,#128C7E)' : '#94A3B8'};color:white;font-weight:700;padding:10px 24px;border:none;border-radius:var(--radius);cursor:${configured ? 'pointer' : 'not-allowed'};font-size:14px"
-        ${!configured ? 'disabled' : ''}> <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:6px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send WhatsApp
+        style="background:linear-gradient(135deg,#075E54,#128C7E);color:white;font-weight:700;padding:10px 24px;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px"> <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:6px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> ${configured ? 'Send WhatsApp' : 'Send via WhatsApp'}
       </button> </div>`);
 
   window._waCurrentTarget = 'all';
@@ -2416,11 +2415,40 @@ function waUseTemplate(key) {
   }
 }
 
+// ── Click-to-send (no Meta setup) — opens WhatsApp with the message ready ──
+function waNormalizePhone(raw) {
+  let num = (raw || '').replace(/\D/g, '');
+  if (num.startsWith('0')) num = '252' + num.slice(1);
+  if (num.length === 9) num = '252' + num;
+  if (!num.startsWith('252') && num.length < 12) num = '252' + num;
+  return num;
+}
+function waLink(phone, message) {
+  return `https://wa.me/${waNormalizePhone(phone)}?text=${encodeURIComponent(message)}`;
+}
+function waRenderClickToSend(emps, msg) {
+  const box = document.getElementById('wa-send-progress');
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:#075E54;margin-bottom:4px">No setup needed — tap “Send” for each person</div>
+    <div style="font-size:11px;color:var(--gray-500);margin-bottom:8px">Each opens WhatsApp with the message ready; just press send there. (Log into WhatsApp on this device first.)</div>
+    <div style="max-height:260px;overflow:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
+      ${emps.map(e => {
+        const personal = (msg || '').replace(/\{name\}/g, e.name || e.full_name || '');
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--gray-100)">
+          <div style="min-width:0"><div style="font-size:13px;font-weight:600">${esc(e.name || '')}</div><div style="font-size:11px;color:var(--gray-400);font-family:var(--mono)">${esc(e.phone || '')}</div></div>
+          <a href="${esc(waLink(e.phone, personal))}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:white;font-weight:700;white-space:nowrap;text-decoration:none" onclick="this.style.opacity='.55';this.textContent='Opened ✓'">Send ›</a>
+        </div>`;
+      }).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--gray-400);margin-top:8px">${emps.length} recipient(s).</div>`;
+}
+
 // ── Start Broadcast ──
 async function waStartBroadcast() {
   const msg = document.getElementById('wa-msg')?.value?.trim();
   if (!msg) { toast('Please write a message first', 'error'); return; }
-  if (!isWAConfigured()) { openWASetup(); return; }
 
   const target = window._waCurrentTarget || 'all';
   const emps = target === 'all'
@@ -2428,6 +2456,9 @@ async function waStartBroadcast() {
     : DB.employees.filter(e => e.status === 'Active' && e.sub === target && e.phone);
 
   if (!emps.length) { toast('No employees with phone numbers in this group', 'warning'); return; }
+
+  // No Meta Cloud API configured → click-to-send (zero setup, uses your WhatsApp).
+  if (!isWAConfigured()) { waRenderClickToSend(emps, msg); return; }
 
   // Confirm
   if (!confirm(`Send WhatsApp to ${emps.length} employees?\n\nMessage preview:\n${msg.slice(0, 120)}${msg.length > 120 ? '…' : ''}`)) return;
