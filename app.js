@@ -4401,7 +4401,10 @@ function mpTab(tabId, btn) {
    LOCAL STORAGE PERSISTENCE — saves all DB changes to your computer
    Data survives page refresh. Auto-saves after every change.
 ═══════════════════════════════════════════════════════════════════════ */
-const STORAGE_KEY = 'amc_hrms_db_v2';
+// v3: bumped to discard old browser caches that still held demo data
+// (loans/advances/notices). On load the app now starts clean and pulls the
+// real records from the cloud.
+const STORAGE_KEY = 'amc_hrms_db_v3';
 const SAVE_DEBOUNCE_MS = 800;
 let _saveTimer = null;
 
