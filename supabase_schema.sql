@@ -271,6 +271,17 @@ create or replace function is_finance() returns boolean language sql stable as $
 -- read their OWN employee/attendance/kpi/leave rows (prevents salary snooping).
 create or replace function is_staff()   returns boolean language sql stable as $$
   select current_hr_role() in ('super_admin','corporate_admin','hr_director','hr_manager','finance_manager','dept_manager','team_leader','auditor','announcements'); $$;
+-- Corporate roles that see ALL subsidiaries; everyone else is subsidiary-scoped.
+create or replace function can_view_all_subs() returns boolean language sql stable as $$
+  select current_hr_role() in ('super_admin','corporate_admin','hr_director','auditor','finance_manager'); $$;
+-- The signed-in user's own subsidiary (via their linked employee). SECURITY
+-- DEFINER so the lookup isn't blocked by RLS; null if the user isn't linked.
+create or replace function my_subsidiary() returns text
+  language sql stable security definer set search_path = public as $$
+  select e.subsidiary_id from employees e
+    join hrms_users u on u.emp_id = e.employee_number
+   where lower(u.email) = lower(auth.jwt() ->> 'email') limit 1; $$;
+create index if not exists idx_employees_sub on employees(subsidiary_id);
 
 -- ============================================================
 -- ROW LEVEL SECURITY — production policies (authenticated users only).
@@ -305,7 +316,7 @@ create policy "write" on kpi_templates     for all    to authenticated using (is
 create policy "read"  on kpi_template_items for select to authenticated using (true);
 create policy "write" on kpi_template_items for all   to authenticated using (is_hr()) with check (is_hr());
 
-create policy "read"  on employees         for select to authenticated using (is_staff() or employee_number = my_emp_id());
+create policy "read"  on employees         for select to authenticated using (can_view_all_subs() or employee_number = my_emp_id() or (is_staff() and subsidiary_id = my_subsidiary()));
 create policy "write" on employees         for all    to authenticated using (is_hr()) with check (is_hr());
 
 -- Account records: a user sees their own row; admins manage all.
@@ -313,17 +324,17 @@ create policy "read"  on hrms_users        for select to authenticated
   using (is_admin() or lower(email) = lower(auth.jwt() ->> 'email'));
 create policy "write" on hrms_users        for all    to authenticated using (is_admin()) with check (is_admin());
 
-create policy "read"  on attendance        for select to authenticated using (is_staff() or employee_id = my_emp_id());
+create policy "read"  on attendance        for select to authenticated using (can_view_all_subs() or employee_id = my_emp_id() or (is_staff() and exists (select 1 from employees e where e.employee_number = employee_id and e.subsidiary_id = my_subsidiary())));
 create policy "write" on attendance        for all    to authenticated using (is_hr()) with check (is_hr());
 
 -- Leave: HR manages all; an employee may file/read their own.
-create policy "read"  on leave_requests    for select to authenticated using (is_staff() or employee_id = my_emp_id());
+create policy "read"  on leave_requests    for select to authenticated using (can_view_all_subs() or employee_id = my_emp_id() or (is_staff() and exists (select 1 from employees e where e.employee_number = employee_id and e.subsidiary_id = my_subsidiary())));
 create policy "write" on leave_requests    for all    to authenticated
   using (is_hr() or employee_id = my_emp_id()) with check (is_hr() or employee_id = my_emp_id());
 create policy "read"  on leave_balances    for select to authenticated using (true);
 create policy "write" on leave_balances    for all    to authenticated using (is_hr()) with check (is_hr());
 
-create policy "read"  on kpis              for select to authenticated using (is_staff() or employee_id = my_emp_id());
+create policy "read"  on kpis              for select to authenticated using (can_view_all_subs() or employee_id = my_emp_id() or (is_staff() and exists (select 1 from employees e where e.employee_number = employee_id and e.subsidiary_id = my_subsidiary())));
 create policy "write" on kpis              for all    to authenticated using (is_hr()) with check (is_hr());
 create policy "read"  on education_records for select to authenticated using (true);
 create policy "write" on education_records for all    to authenticated using (is_hr()) with check (is_hr());
@@ -390,7 +401,7 @@ create policy "read"  on candidates         for select to authenticated using (i
 create policy "write" on candidates         for all    to authenticated using (is_hr()) with check (is_hr());
 
 -- Open to all staff to read; HR manages.
-create policy "read"  on requisitions       for select to authenticated using (is_staff());
+create policy "read"  on requisitions       for select to authenticated using (can_view_all_subs() or (is_staff() and (doc ->> 'sub') = my_subsidiary()));
 create policy "write" on requisitions       for all    to authenticated using (is_hr()) with check (is_hr());
 create policy "read"  on trainings          for select to authenticated using (true);
 create policy "write" on trainings          for all    to authenticated using (is_hr()) with check (is_hr());
