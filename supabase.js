@@ -377,7 +377,11 @@ const SupaSync = {
     results.forEach((r, i) => {
       const key = this.DOC_COLLECTIONS[i][1];
       const rows = r.value;
-      if (Array.isArray(rows) && rows.length) {
+      // Cloud is the source of truth: a successful fetch overwrites the local
+      // collection even when it's EMPTY. This stops stale demo data cached in
+      // the browser from resurrecting after it's deleted from the cloud.
+      // (A failed/rejected fetch leaves the local copy untouched.)
+      if (r.status === 'fulfilled' && Array.isArray(rows)) {
         DB[key] = rows.map(x => x.doc).filter(Boolean);
       }
     });
