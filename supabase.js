@@ -539,6 +539,11 @@ const SupaWrite = {
       });
     } catch(e) { console.warn('SupaWrite.saveKPI:', e.message); }
   },
+  async deleteKPI(kpiId) {
+    if (!SupaSync.connected || kpiId == null) return;
+    try { await SUPA.delete('kpis', `id=eq.${encodeURIComponent(kpiId)}`); }
+    catch(e) { console.warn('SupaWrite.deleteKPI:', e.message); }
+  },
   async saveKPITemplate(tmpl) {
     if (!SupaSync.connected) return;
     try {

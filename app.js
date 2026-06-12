@@ -1111,15 +1111,24 @@ function assignKPITemplate(tmplId) {
       </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="doAssignKPIs('${tmplId}')">Assign KPIs</button> </div>`);
 }
 
+// Globally-unique KPI id (the old length-based scheme collided across employees,
+// which would overwrite rows in the cloud on upsert).
+function newKpiId() { return 'KPI_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
 function doAssignKPIs(tmplId) {
   const tmpl = DB.kpiTemplates.find(t=>t.id===tmplId); if (!tmpl) return;
   const empId = document.getElementById('ka_emp').value;
   const period = document.getElementById('ka_period').value;
-  // Remove existing KPIs for this emp/period
+  // Remove existing KPIs for this emp/period — locally AND in the cloud.
+  const removed = DB.kpis.filter(k=>k.empId===empId&&k.period===period);
   DB.kpis = DB.kpis.filter(k=>!(k.empId===empId&&k.period===period));
-  tmpl.kpis.forEach((k,i) => {
-    DB.kpis.push({ id:`KPI${String(DB.kpis.length+1).padStart(3,'0')}`, empId, templateId:tmplId, title:k.title, type:k.type, unit:k.unit, target:k.target, actual:0, weight:k.weight, period, notes:'' });
+  if (typeof SupaWrite!=='undefined') removed.forEach(k=>SupaWrite.deleteKPI(k.id));
+  tmpl.kpis.forEach((k) => {
+    const kpi = { id:newKpiId(), empId, templateId:tmplId, title:k.title, type:k.type, unit:k.unit, target:k.target, actual:0, weight:k.weight, period, notes:'' };
+    DB.kpis.push(kpi);
+    if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(kpi);
   });
+  scheduleSave();
   closeModal(); toast(`${tmpl.kpis.length} KPIs assigned to ${getEmpName(empId)} for ${period}`,'success'); kpiTab('assignments', document.querySelector('#kpiTabs .tab:nth-child(2)'));
 }
 
@@ -1129,7 +1138,7 @@ function kpiAssignmentsHTML() {
 }
 
 function updateKPIActual(kpiId, val) {
-  const k = DB.kpis.find(x=>x.id===kpiId); if (k) { k.actual = parseFloat(val)||0; if(typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k); }
+  const k = DB.kpis.find(x=>x.id===kpiId); if (k) { k.actual = parseFloat(val)||0; if(typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k); scheduleSave(); }
   toast('Score updated','success');
 }
 
@@ -1137,6 +1146,8 @@ function updateKPIWeight(kpiId, val) {
   const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
   const newW = parseFloat(val)||0;
   k.weight = newW;
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k);
+  scheduleSave();
   // Check total for this employee+period
   const empKpis = DB.kpis.filter(x=>x.empId===k.empId&&x.period===k.period);
   const total = empKpis.reduce((s,x)=>s+x.weight,0);
@@ -1150,6 +1161,8 @@ function updateKPIWeight(kpiId, val) {
 function deleteKPI(kpiId) {
   if (!confirm('Delete this KPI?')) return;
   DB.kpis = DB.kpis.filter(k=>k.id!==kpiId);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteKPI(kpiId);
+  scheduleSave();
   toast('KPI deleted','info'); nav('kpi');
 }
 
@@ -1164,7 +1177,10 @@ function saveInlineKPI() {
   const empId = document.getElementById('ik_emp').value;
   const period = document.getElementById('ik_period').value;
   const weight = parseFloat(document.getElementById('ik_weight').value)||25;
-  DB.kpis.push({ id:'KPI'+String(DB.kpis.length+1).padStart(3,'0'), empId, templateId:'', title, type:document.getElementById('ik_type').value, period, target:parseFloat(document.getElementById('ik_target').value)||0, actual:parseFloat(document.getElementById('ik_actual').value)||0, unit:document.getElementById('ik_unit').value, weight, notes:'' });
+  const kpi = { id:newKpiId(), empId, templateId:'', title, type:document.getElementById('ik_type').value, period, target:parseFloat(document.getElementById('ik_target').value)||0, actual:parseFloat(document.getElementById('ik_actual').value)||0, unit:document.getElementById('ik_unit').value, weight, notes:'' };
+  DB.kpis.push(kpi);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(kpi);
+  scheduleSave();
   // Check total
   const total = DB.kpis.filter(k=>k.empId===empId&&k.period===period).reduce((s,k)=>s+k.weight,0);
   closeModal(); toast(`KPI added (weight total for this employee: ${total}%)${Math.abs(total-100)>0.01?' —  adjust to reach 100%':'  ✓'}`, Math.abs(total-100)>0.01?'warning':'success');
