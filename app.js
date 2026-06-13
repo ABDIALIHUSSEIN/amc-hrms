@@ -1174,7 +1174,7 @@ function kpiAssignmentsHTML() {
   return tiles + `<div class="card"><div class="card-header"> <div><div class="card-title">Employee KPI Assignments</div><div class="card-sub">Binary: set status (auto 100/0) · Weighted: edit actual</div></div> <button class="btn btn-primary btn-sm" onclick="openInlineKPIModal()">${ICO.plus} Assign KPI</button> </div><div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>KPI</th><th>Mode</th><th>Target / Status</th><th>Actual</th><th>Score</th><th>Weight</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${kpis.map(k=>{const e=getEmp(k.empId);const ach=PerfEngine.calcAchievement(k);const binary=k.scoringMode==='binary';
     const tgtCell = binary ? `<select class="form-control" style="width:130px;font-size:12px" onchange="setKpiStatus('${k.id}',this.value)"><option ${k.status!=='Completed'?'selected':''}>Not Completed</option><option ${k.status==='Completed'?'selected':''}>Completed</option></select>` : `<span style="font-family:var(--mono)">${k.target} ${k.unit||''}</span>`;
     const actCell = binary ? `<span style="color:var(--gray-300)">—</span>` : `<input type="number" class="form-control" style="width:90px;font-size:12px;font-family:var(--mono)" value="${k.actual}" onchange="updateKPIActual('${k.id}',this.value)">`;
-    return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:k.empId}</div><div class="emp-id">${k.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600;min-width:180px">${k.title}</td> <td><span class="badge ${binary?'badge-navy':'badge-gray'}" style="font-size:10px">${binary?'Binary':'Weighted'}</span></td> <td>${tgtCell}</td> <td>${actCell}</td> <td><div style="display:flex;align-items:center;gap:6px"><div class="progress" style="width:60px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:12px">${Math.round(ach)}%</span></div></td> <td><input type="number" class="form-control" style="width:65px;font-size:12px;font-family:var(--mono);font-weight:700" value="${k.weight}" onchange="updateKPIWeight('${k.id}',this.value)" title="Weights for an employee should total 100%"></td> <td style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</td> <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openEditKPIModal('${k.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" onclick="deleteKPI('${k.id}')" style="color:var(--red)" title="Delete">${ICO.trash}</button></div></td> </tr>`}).join('')}</tbody> </table></div></div></div>`;
+    return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:k.empId}</div><div class="emp-id">${k.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600;min-width:180px">${k.title}</td> <td><span class="badge ${binary?'badge-navy':'badge-gray'}" style="font-size:10px">${binary?'Binary':'Weighted'}</span></td> <td>${tgtCell}</td> <td>${actCell}</td> <td><div style="display:flex;align-items:center;gap:6px"><div class="progress" style="width:60px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:12px">${Math.round(ach)}%</span></div></td> <td><input type="number" class="form-control" style="width:65px;font-size:12px;font-family:var(--mono);font-weight:700" value="${k.weight}" onchange="updateKPIWeight('${k.id}',this.value)" title="Weights for an employee should total 100%"></td> <td style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</td> <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openKPIDetail('${k.id}')" title="Details · Approve · Reviews · Comments">${ICO.eye}</button><button class="btn btn-ghost btn-xs" onclick="openEditKPIModal('${k.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" onclick="deleteKPI('${k.id}')" style="color:var(--red)" title="Delete">${ICO.trash}</button></div></td> </tr>`}).join('')}</tbody> </table></div></div></div>`;
 }
 
 function kpiActor(){ return (STATE.user && (STATE.user.email||STATE.user.name)) || ''; }
@@ -1275,6 +1275,77 @@ function saveEditKPI(kpiId){
   if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after }); }
   scheduleSave();
   closeModal(); toast('KPI updated','success'); nav('kpi');
+}
+
+// ── KPI detail: approval workflow + reviews + comments (all DB-persisted) ──
+function openKPIDetail(kpiId){
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k){ toast('KPI not found','error'); return; }
+  const e = getEmp(k.empId);
+  const ach = PerfEngine.calcAchievement(k);
+  const isMgr = (typeof isStaffRole==='function') ? true : true; // approval gated below by canApprove
+  const canApprove = ['super_admin','corporate_admin','hr_director','hr_manager','dept_manager'].includes(STATE.role) || isMasterAdmin();
+  const reviews  = (DB.kpiReviews||[]).filter(r=>r.kpiId===kpiId);
+  const comments = (DB.kpiComments||[]).filter(c=>c.kpiId===kpiId);
+  const stBadge = { Approved:'badge-green', Rejected:'badge-red', Pending:'badge-amber' }[k.approvalStatus||'Pending'] || 'badge-amber';
+  openModal('wide', `
+    <div class="modal-header"><span class="modal-title">KPI — ${esc(k.title)}</span>${closeX()}</div>
+    <div class="modal-body">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px">
+        <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Employee</div><div style="font-weight:700">${e?esc(e.name):esc(k.empId)}</div></div>
+        <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Mode / Score</div><div style="font-weight:700">${k.scoringMode==='binary'?'Binary':'Weighted'} · ${Math.round(ach)}%</div></div>
+        <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Period</div><div style="font-weight:700">${esc(k.periodType||'')} ${esc(k.period||'')}</div></div>
+        <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Approval</div><div><span class="badge ${stBadge}">${esc(k.approvalStatus||'Pending')}</span>${k.approvedBy?` <span style="color:var(--gray-400)">by ${esc(k.approvedBy)}</span>`:''}</div></div>
+      </div>
+      ${canApprove ? `<div style="margin-bottom:16px"><button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="approveKPI('${k.id}','Approved')">Approve</button> <button class="btn btn-sm btn-outline" style="color:var(--red);margin-left:6px" onclick="approveKPI('${k.id}','Rejected')">Reject</button></div>` : ''}
+
+      <div class="section-divider"><span>Reviews (${reviews.length})</span></div>
+      <div style="max-height:160px;overflow:auto;margin-bottom:8px">${reviews.length ? reviews.map(r=>`<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:12px"><div style="font-weight:600">${esc(r.rating||'')} ${r.score!=null?`· ${r.score}`:''} <span style="color:var(--gray-400);font-weight:400">— ${esc(r.reviewer||'')} · ${esc(String(r.createdAt||'').replace('T',' ').slice(0,16))}</span></div>${r.notes?`<div style="color:var(--gray-600)">${esc(r.notes)}</div>`:''}</div>`).join('') : '<div style="color:var(--gray-400);font-size:12px;padding:6px">No reviews yet.</div>'}</div>
+      <div class="form-row cols-3" style="margin-bottom:6px">
+        <div class="form-group" style="margin:0"><select class="form-control form-control-sm" id="rv_rating"><option>Outstanding</option><option>Exceeds Expectations</option><option selected>Meets Expectations</option><option>Needs Improvement</option><option>Unsatisfactory</option></select></div>
+        <div class="form-group" style="margin:0"><input class="form-control form-control-sm" id="rv_score" type="number" placeholder="Score (0-100)"></div>
+        <div class="form-group" style="margin:0"><input class="form-control form-control-sm" id="rv_notes" placeholder="Review notes"></div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addKpiReview('${k.id}')" style="margin-bottom:16px">+ Add Review</button>
+
+      <div class="section-divider"><span>Comments (${comments.length})</span></div>
+      <div style="max-height:160px;overflow:auto;margin-bottom:8px">${comments.length ? comments.map(c=>`<div style="padding:7px 10px;border-bottom:1px solid var(--gray-100);font-size:12px"><div style="font-weight:600">${esc(c.author||'')} <span style="color:var(--gray-400);font-weight:400">${esc(c.authorRole||'')} · ${esc(String(c.createdAt||'').replace('T',' ').slice(0,16))}</span></div><div style="color:var(--gray-700)">${esc(c.body||'')}</div></div>`).join('') : '<div style="color:var(--gray-400);font-size:12px;padding:6px">No comments yet.</div>'}</div>
+      <div style="display:flex;gap:8px"><input class="form-control form-control-sm" id="cm_body" placeholder="Write a comment…" style="flex:1"><button class="btn btn-primary btn-sm" onclick="addKpiComment('${k.id}')">Post</button></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+}
+
+function approveKPI(kpiId, decision){
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
+  const before = { approvalStatus:k.approvalStatus };
+  k.approvalStatus = decision; k.approvedBy = kpiActor(); k.approvedAt = new Date().toISOString();
+  if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after:{ approvalStatus:decision } }); }
+  scheduleSave();
+  toast(`KPI ${decision.toLowerCase()}`, decision==='Approved'?'success':'warning');
+  openKPIDetail(kpiId);
+}
+
+function addKpiReview(kpiId){
+  const rating = document.getElementById('rv_rating').value;
+  const score = parseFloat(document.getElementById('rv_score').value);
+  const notes = sanitizeText(document.getElementById('rv_notes').value);
+  const k = DB.kpis.find(x=>x.id===kpiId);
+  const review = { id:'tmp'+Date.now(), kpiId, empId:k?k.empId:'', reviewer:kpiActor(), period:k?k.period:'', rating, score:isNaN(score)?null:score, notes, createdAt:new Date().toISOString() };
+  if (!DB.kpiReviews) DB.kpiReviews=[];
+  DB.kpiReviews.unshift(review);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKpiReview(review);
+  scheduleSave();
+  toast('Review added','success'); openKPIDetail(kpiId);
+}
+
+function addKpiComment(kpiId){
+  const body = sanitizeText(document.getElementById('cm_body').value);
+  if (!body) { toast('Write a comment first','error'); return; }
+  const comment = { id:'tmp'+Date.now(), kpiId, author:(STATE.user&&STATE.user.name)||kpiActor(), authorRole:STATE.user?STATE.user.role:'', body, createdAt:new Date().toISOString() };
+  if (!DB.kpiComments) DB.kpiComments=[];
+  DB.kpiComments.unshift(comment);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKpiComment(comment);
+  scheduleSave();
+  toast('Comment posted','success'); openKPIDetail(kpiId);
 }
 
 function ikToggleMode(){

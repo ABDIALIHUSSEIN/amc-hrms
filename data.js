@@ -101,6 +101,8 @@ kpiTemplates: [
 ],
 
 kpis: [],
+kpiComments: [],
+kpiReviews: [],
 
 attendance: [],
 
