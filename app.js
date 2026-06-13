@@ -2913,10 +2913,13 @@ const SELF_PAGES = {
     const sc     = myKpis.length ? PerfEngine.calcEmployeeScore(emp.id) : null;
     const rt     = sc !== null ? PerfEngine.ratingLabel(sc) : null;
     wrap.innerHTML = `<div class="page"> <div class="page-header"><div><h1 class="page-title">My KPIs</h1><div class="page-sub">${emp.name} · Performance Tracking</div></div></div> ${sc !== null ? `<div style="background:linear-gradient(135deg,var(--navy),#002D72);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:20px"> <div class="kpi-score ${rt.cls}" style="font-size:40px;min-width:80px;text-align:center">${sc}%</div> <div><div style="font-size:16px;font-weight:800;color:white">${rt.label}</div><div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:4px">Overall KPI Score · ${myKpis.length} indicators</div></div> </div>` : ''}
-      <div class="card"> <div class="table-wrap"><table class="table"> <thead><tr><th>KPI</th><th>Target</th><th>Actual</th><th>Weight</th><th>Achievement</th></tr></thead> <tbody>${myKpis.length ? myKpis.map(k => {
-            const ach = k.target > 0 ? Math.round(k.actual / k.target * 100) : 0;
-            return `<tr> <td><div style="font-weight:700">${k.title}</div><div style="font-size:11px;color:var(--gray-400)">${k.period||'Q2-2026'}</div></td> <td style="font-family:var(--mono)">${k.target} ${k.unit||''}</td> <td style="font-family:var(--mono)">${k.actual} ${k.unit||''}</td> <td>${k.weight}%</td> <td><span class="kpi-score ${ach>=100?'excellent':ach>=70?'good':ach>=50?'average':'poor'}">${ach}%</span></td> </tr>`;
-          }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:24px">No KPIs assigned. Contact your manager.</td></tr>'}</tbody> </table></div> </div> </div>`;
+      <div class="card"> <div class="table-wrap"><table class="table"> <thead><tr><th>KPI</th><th>Status</th><th>Achievement</th><th>Weight</th><th>Approval</th><th></th></tr></thead> <tbody>${myKpis.length ? myKpis.map(k => {
+            const ach = Math.round(PerfEngine.calcAchievement(k));
+            const apB = ({Approved:'badge-green',Rejected:'badge-red'})[k.approvalStatus]||'badge-amber';
+            const cmts = (DB.kpiComments||[]).filter(c=>c.kpiId===k.id).length;
+            const statusCell = k.scoringMode==='binary' ? `<span class="badge ${k.status==='Completed'?'badge-green':'badge-gray'}">${k.status||'Not Completed'}</span>` : `<span style="font-family:var(--mono)">${k.actual}/${k.target} ${k.unit||''}</span>`;
+            return `<tr> <td><div style="font-weight:700">${k.title}</div><div style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</div></td> <td>${statusCell}</td> <td><span class="kpi-score ${ach>=100?'excellent':ach>=70?'good':ach>=50?'average':'poor'}">${ach}%</span></td> <td>${k.weight}%</td> <td><span class="badge ${apB}" style="font-size:10px">${k.approvalStatus||'Pending'}</span></td> <td><button class="btn btn-ghost btn-xs" onclick="openKPIDetail('${k.id}')" title="Reviews / Comments${cmts?` (${cmts})`:''}">${ICO.eye}${cmts?` ${cmts}`:''}</button></td> </tr>`;
+          }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">No KPIs assigned. Contact your manager.</td></tr>'}</tbody> </table></div> </div> </div>`;
   },
 
 };
