@@ -146,6 +146,9 @@ CREATE TABLE IF NOT EXISTS kpis (
   created_by  TEXT,
   updated_by  TEXT,
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  approval_status TEXT DEFAULT 'Pending',   -- Pending | Approved | Rejected
+  approved_by TEXT,
+  approved_at TIMESTAMPTZ,
   deleted_at  TIMESTAMPTZ,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
@@ -158,6 +161,19 @@ CREATE TABLE IF NOT EXISTS kpi_audit (
   changed_at TIMESTAMPTZ DEFAULT NOW(),
   before     JSONB,
   after      JSONB
+);
+
+-- KPI threaded comments + periodic reviews (append-only).
+CREATE TABLE IF NOT EXISTS kpi_comments (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kpi_id TEXT, author TEXT, author_role TEXT, body TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS kpi_reviews (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kpi_id TEXT, employee_id TEXT, reviewer TEXT, period TEXT,
+  rating TEXT, score NUMERIC, notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ── EDUCATION RECORDS ──
@@ -361,6 +377,14 @@ drop policy if exists "read"  on kpi_audit;
 drop policy if exists "write" on kpi_audit;
 create policy "read"  on kpi_audit         for select to authenticated using (is_staff());
 create policy "write" on kpi_audit         for insert to authenticated with check (true);
+alter table kpi_comments enable row level security;
+alter table kpi_reviews  enable row level security;
+drop policy if exists "read" on kpi_comments; drop policy if exists "write" on kpi_comments;
+drop policy if exists "read" on kpi_reviews;  drop policy if exists "write" on kpi_reviews;
+create policy "read"  on kpi_comments       for select to authenticated using (is_staff());
+create policy "write" on kpi_comments       for insert to authenticated with check (true);
+create policy "read"  on kpi_reviews        for select to authenticated using (is_staff());
+create policy "write" on kpi_reviews        for insert to authenticated with check (true);
 create policy "write" on kpis              for all    to authenticated using (is_hr()) with check (is_hr());
 create policy "read"  on education_records for select to authenticated using (true);
 create policy "write" on education_records for all    to authenticated using (is_hr()) with check (is_hr());
