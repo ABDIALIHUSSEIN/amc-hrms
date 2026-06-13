@@ -135,8 +135,29 @@ CREATE TABLE IF NOT EXISTS kpis (
   weight      NUMERIC DEFAULT 25,
   period      TEXT,
   notes       TEXT,
+  scoring_mode TEXT DEFAULT 'weighted',   -- 'weighted' | 'binary'
+  status      TEXT,                        -- binary: 'Completed' | 'Not Completed'
+  score       NUMERIC,                     -- binary: 100 | 0
+  period_type TEXT DEFAULT 'Quarterly',    -- 'Monthly' | 'Quarterly' | 'Yearly'
+  start_date  DATE,
+  end_date    DATE,
+  remarks     TEXT,
+  description TEXT,
+  created_by  TEXT,
+  updated_by  TEXT,
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
   deleted_at  TIMESTAMPTZ,
   created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- KPI audit / version history: one append-only row per create/edit (before/after).
+CREATE TABLE IF NOT EXISTS kpi_audit (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kpi_id     TEXT,
+  changed_by TEXT,
+  changed_at TIMESTAMPTZ DEFAULT NOW(),
+  before     JSONB,
+  after      JSONB
 );
 
 -- ── EDUCATION RECORDS ──
@@ -335,6 +356,11 @@ create policy "read"  on leave_balances    for select to authenticated using (tr
 create policy "write" on leave_balances    for all    to authenticated using (is_hr()) with check (is_hr());
 
 create policy "read"  on kpis              for select to authenticated using (can_view_all_subs() or employee_id = my_emp_id() or (is_staff() and exists (select 1 from employees e where e.employee_number = employee_id and e.subsidiary_id = my_subsidiary())));
+alter table kpi_audit enable row level security;
+drop policy if exists "read"  on kpi_audit;
+drop policy if exists "write" on kpi_audit;
+create policy "read"  on kpi_audit         for select to authenticated using (is_staff());
+create policy "write" on kpi_audit         for insert to authenticated with check (true);
 create policy "write" on kpis              for all    to authenticated using (is_hr()) with check (is_hr());
 create policy "read"  on education_records for select to authenticated using (true);
 create policy "write" on education_records for all    to authenticated using (is_hr()) with check (is_hr());
