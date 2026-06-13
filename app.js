@@ -1122,7 +1122,10 @@ function createNewKPITemplate() {
   const total = kpis.reduce((s,k)=>s+k.weight,0);
   if (Math.abs(total-100)>0.01) { toast(`Weights total ${total}% — must equal 100%`,'error'); return; }
   const id = 'KT'+String(DB.kpiTemplates.length+1).padStart(3,'0');
-  DB.kpiTemplates.push({ id, name, role, kpis });
+  const tmpl = { id, name, role, kpis };
+  DB.kpiTemplates.push(tmpl);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPITemplate(tmpl);
+  scheduleSave();
   closeModal(); toast('KPI template created','success'); nav('kpi');
 }
 
@@ -3213,6 +3216,8 @@ function archiveNotice(noticeId) {
   const newStatus = n.status === 'Archived' ? 'Active' : 'Archived';
   n.status    = newStatus;
   n.updatedAt = new Date().toISOString().replace('T',' ').slice(0,16);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveDoc('notices', n);
+  scheduleSave();
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:n.updatedAt, user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`${newStatus==='Archived'?'Archived':'Unarchived'} notice: "${n.title}"`, module:'Notices', ip:'browser' });
   toast(`Notice ${newStatus === 'Archived' ? 'archived' : 'restored'}`, 'success');
   renderNoticeList();
