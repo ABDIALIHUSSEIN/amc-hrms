@@ -364,6 +364,7 @@ const SupaSync = {
         periodType: k.period_type || '', startDate: k.start_date || '', endDate: k.end_date || '',
         remarks:    k.remarks || '', description: k.description || '',
         createdBy:  k.created_by || '', updatedBy: k.updated_by || '',
+        approvalStatus: k.approval_status || 'Pending', approvedBy: k.approved_by || '', approvedAt: k.approved_at || '',
       }));
     }
     if (eduRecs?.length) {
@@ -402,7 +403,21 @@ const SupaSync = {
     }
     // ── Phase 2 document-store collections (loans, advances, notices, etc.) ──
     await this.loadDocs();
+    await this.loadKpiExtras();
     console.log(`✓ Supabase loaded: ${DB.employees.length} employees, ${DB.kpis.length} KPIs`);
+  },
+
+  async loadKpiExtras() {
+    const r = await Promise.allSettled([
+      SUPA.select('kpi_comments', 'select=*&order=created_at.desc&limit=1000'),
+      SUPA.select('kpi_reviews',  'select=*&order=created_at.desc&limit=1000'),
+    ]);
+    if (r[0].status==='fulfilled' && Array.isArray(r[0].value)) {
+      DB.kpiComments = r[0].value.map(c => ({ id:c.id, kpiId:c.kpi_id, author:c.author||'', authorRole:c.author_role||'', body:c.body||'', createdAt:c.created_at }));
+    }
+    if (r[1].status==='fulfilled' && Array.isArray(r[1].value)) {
+      DB.kpiReviews = r[1].value.map(x => ({ id:x.id, kpiId:x.kpi_id, empId:x.employee_id||'', reviewer:x.reviewer||'', period:x.period||'', rating:x.rating||'', score:(x.score!=null?parseFloat(x.score):null), notes:x.notes||'', createdAt:x.created_at }));
+    }
   },
 
   // Maps a Supabase doc-table to its in-memory DB collection key.
@@ -551,6 +566,7 @@ const SupaWrite = {
         period_type: k.periodType||null, start_date: k.startDate||null, end_date: k.endDate||null,
         remarks: k.remarks||null, description: k.description||null,
         created_by: k.createdBy||null, updated_by: k.updatedBy||null,
+        approval_status: k.approvalStatus||'Pending', approved_by: k.approvedBy||null, approved_at: k.approvedAt||null,
         updated_at: new Date().toISOString(),
       });
     } catch(e) { console.warn('SupaWrite.saveKPI:', e.message); }
@@ -559,6 +575,16 @@ const SupaWrite = {
     if (!SupaSync.connected) return;
     try { await SUPA.insert('kpi_audit', { kpi_id: entry.kpiId, changed_by: entry.changedBy||null, before: entry.before||{}, after: entry.after||{} }); }
     catch(e) { console.warn('SupaWrite.saveKpiAudit:', e.message); }
+  },
+  async saveKpiComment(c) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.insert('kpi_comments', { kpi_id: c.kpiId, author: c.author||null, author_role: c.authorRole||null, body: c.body||'' }); }
+    catch(e) { console.warn('SupaWrite.saveKpiComment:', e.message); }
+  },
+  async saveKpiReview(r) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.insert('kpi_reviews', { kpi_id: r.kpiId, employee_id: r.empId||null, reviewer: r.reviewer||null, period: r.period||null, rating: r.rating||null, score: (r.score!=null?r.score:null), notes: r.notes||null }); }
+    catch(e) { console.warn('SupaWrite.saveKpiReview:', e.message); }
   },
   async deleteKPI(kpiId) {
     if (!SupaSync.connected || kpiId == null) return;
