@@ -469,7 +469,7 @@ const SupaSync = {
         base_salary: e.salary, allowance: e.allowance,
         joined_date: e.joined, dob: e.dob||null,
         status: e.status, contract_type: e.contractType||'Permanent',
-        nationality: e.nationality||'Somali',
+        nationality: e.nationality||'Somali', grade: e.grade||null,
       }));
       await SUPA.upsert('employees', emps, 'employee_number');
       const users = DB.users.map(u => ({
@@ -513,7 +513,7 @@ const SupaWrite = {
         title: emp.title, email: emp.email, phone: emp.phone||null,
         gender: emp.gender==='M'?'Male':'Female', base_salary: emp.salary,
         allowance: emp.allowance, joined_date: emp.joined, status: emp.status,
-        contract_type: emp.contractType||'Permanent', nationality: emp.nationality||'Somali',
+        contract_type: emp.contractType||'Permanent', nationality: emp.nationality||'Somali', grade: emp.grade||null,
       }, 'employee_number');
     } catch(e) { console.warn('SupaWrite.saveEmployee:', e.message); }
   },
