@@ -953,11 +953,24 @@ async function empNumberTaken(num){
   } catch(e){ return false; }
 }
 
+// True if a phone is already used by ANOTHER employee (cache + DB, digits-only
+// compare so formatting differences still match). exceptId = the row being edited.
+async function phoneTaken(phone, exceptId){
+  const norm = s => (s||'').replace(/\D/g,'');
+  const np = norm(phone); if (!np) return false;
+  if (DB.employees.some(e => e.id!==exceptId && norm(e.phone)===np)) return true;
+  try {
+    const r = await SUPA.select('employees', `phone=eq.${encodeURIComponent(phone)}&select=employee_number`);
+    return Array.isArray(r) && r.some(x => x.employee_number !== exceptId);
+  } catch(e){ return false; }
+}
+
 async function saveNewEmp() {
   const name = (document.getElementById('ne_name')||{}).value;
   const id   = (document.getElementById('ne_id')||{}).value;
   if (!name||!id) { toast('Name and Employee ID are required','error'); return; }
   if (await empNumberTaken(id)) { toast('Employee number already exists','error'); return; }
+  if (await phoneTaken(document.getElementById('ne_phone')?.value)) { toast('Phone number already exists','error'); return; }
   DB.employees.push({
     id, name, title: document.getElementById('ne_title').value,
     dept: document.getElementById('ne_dept').value, sub: document.getElementById('ne_sub').value,
@@ -984,8 +997,9 @@ function editEmpModal(id) {
     <div class="modal-header"><span class="modal-title">Edit — ${e.name}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" id="ee_name" value="${e.name}"></div> <div class="form-group"><label class="form-label">Job Title</label><input class="form-control" id="ee_title" value="${e.title}"></div> </div> <div class="form-row cols-3"> <div class="form-group"><label class="form-label">Department</label> <select class="form-control" id="ee_dept">${DB.departments.map(d=>`<option value="${d.id}"${d.id===e.dept?' selected':''}>${d.name}</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label">Subsidiary</label> <select class="form-control" id="ee_sub">${DB.subsidiaries.map(s=>`<option value="${s.id}"${s.id===e.sub?' selected':''}>${s.name}</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label">Grade</label> <select class="form-control" id="ee_grade">${DB.grades.map(g=>`<option value="${g.grade}"${g.grade===e.grade?' selected':''}>${g.grade} — ${g.title}</option>`).join('')}</select> </div> </div> <div class="form-row cols-3"> <div class="form-group"><label class="form-label">Status</label> <select class="form-control" id="ee_status">${['Active','On Leave','Resigned','Terminated','Contract'].map(s=>`<option${s===e.status?' selected':''}>${s}</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label">Base Salary</label><input class="form-control" id="ee_salary" type="number" value="${e.salary}"></div> <div class="form-group"><label class="form-label">Allowance</label><input class="form-control" id="ee_allow" type="number" value="${e.allowance}"></div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="ee_email" value="${e.email}"></div> <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="ee_phone" value="${e.phone}"></div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveEditEmp('${id}')">Save Changes</button> </div>`);
 }
 
-function saveEditEmp(id) {
+async function saveEditEmp(id) {
   const e = getEmp(id); if (!e) return;
+  if (await phoneTaken(document.getElementById('ee_phone')?.value, id)) { toast('Phone number already exists', 'error'); return; }
   const oldSal = e.salary;
   e.name = document.getElementById('ee_name').value;
   e.title = document.getElementById('ee_title').value;
@@ -4540,6 +4554,9 @@ async function saveEmployeeForm(existingId) {
   const empId = existingId || `${prefix}${String(maxNum + 1).padStart(4, '0')}`;
   // New employee: guarantee the number isn't already taken (cache + DB).
   if (!existingId && await empNumberTaken(empId)) { toast('Employee number already exists — please try again', 'error'); return; }
+  // Phone must be unique across employees (excluding the one being edited).
+  const _phoneVal = document.getElementById('ea_phone')?.value || '';
+  if (_phoneVal && await phoneTaken(_phoneVal, existingId)) { toast('Phone number already exists', 'error'); return; }
 
   const empData = {
     id:              empId,
