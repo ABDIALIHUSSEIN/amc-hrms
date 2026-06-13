@@ -8,7 +8,7 @@
 const STATE = {
   page: 'dashboard',
   user: null,
-  role: 'super_admin',
+  role: null,
   subsidiary: 'all',
   attDate: new Date().toISOString().split('T')[0],
   payMonth: new Date().toISOString().slice(0, 7),
@@ -119,11 +119,29 @@ document.addEventListener('DOMContentLoaded', () => {
 const SUPER_ADMIN_ROLE    = 'super_admin';
 const PROTECTED_ROLES     = new Set(['super_admin']);
 const ASSIGNABLE_ROLES    = ['employee','dept_manager','hr_manager','finance_manager','team_leader','auditor','viewer','announcements'];
-const MASTER_ADMIN_EMAILS = new Set(['admin@asalmedia.so','superadmin@asalmedia.so','sirabdiali@gmail.com']);
+// SHA-256 hashes of master admin emails — prevents email harvesting from source.
+// To regenerate: node -e "require('crypto').createHash('sha256').update(email).digest('hex')"
+const MASTER_ADMIN_HASHES = new Set([
+  'fc06ac45677577a2fc991754f08c9d797dfa93d69a45a45e9707aec78d6cbe6c',
+  '7c15f43e3626490eccf40c43da5a65b2b570d15c05a3ad55474249469586ff32',
+  '3bddea06d32db0b2551f01c7be1ad13540e335d1dcb0edaf7c64eeb2a5ac6363',
+]);
 
-// ── Check if current user is the master super admin ──
+// Precompute at login (see setMasterAdminFlag) so all callers stay synchronous.
 function isMasterAdmin() {
-  return STATE.role === SUPER_ADMIN_ROLE && MASTER_ADMIN_EMAILS.has(STATE.user?.email || '');
+  return STATE.role === SUPER_ADMIN_ROLE && STATE._isMasterAdmin === true;
+}
+
+// Call once after STATE.user is populated. Uses SubtleCrypto to hash the email
+// and compare against MASTER_ADMIN_HASHES so plaintext emails never live in source.
+async function setMasterAdminFlag(email) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode((email || '').toLowerCase()));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    STATE._isMasterAdmin = MASTER_ADMIN_HASHES.has(hex);
+  } catch (e) {
+    STATE._isMasterAdmin = false;
+  }
 }
 
 // ── Check if a role can be assigned by the current user ──
@@ -186,7 +204,8 @@ async function completeLogin(email, remember) {
     if (Array.isArray(rows) && rows[0]) profile = rows[0];
   } catch (e) { /* hrms_users may not exist yet on first deploy */ }
 
-  const isMaster = MASTER_ADMIN_EMAILS.has(email);
+  await setMasterAdminFlag(email);
+  const isMaster = STATE._isMasterAdmin;
   const effectiveRole = (profile && profile.role) || (isMaster ? 'super_admin' : 'employee');
   const empId = (profile && profile.emp_id) || '';
   const linkedEmp = empId ? DB.employees.find(e => e.id === empId) : null;
@@ -205,7 +224,7 @@ async function completeLogin(email, remember) {
     initials: initials(displayName),
     empId:    empId,
     userId:   (profile && profile.id) || '',
-    isMaster: isMaster,
+    isMaster: STATE._isMasterAdmin,
   };
   if (typeof updateSupaStatus === 'function') updateSupaStatus(SupaSync.connected ? 'connected' : 'offline');
   bootApp();
@@ -717,9 +736,12 @@ function exportKPIs() {
     const e = getEmp(k.empId);
     const ach = PerfEngine.calcAchievement(k);
     return { 'KPI ID': k.id, 'Employee ID': k.empId, 'Employee Name': e ? e.name : '—',
-      'Subsidiary': e ? getSubName(e.sub) : '—', 'KPI Title': k.title, 'Type': k.type,
-      'Target': k.target, 'Actual': k.actual, 'Unit': k.unit, 'Weight %': k.weight,
-      'Achievement %': Math.round(ach), 'Period': k.period };
+      'Subsidiary': e ? getSubName(e.sub) : '—', 'KPI Name': k.title, 'Description': k.description||'',
+      'Mode': k.scoringMode==='binary'?'Binary':'Weighted', 'Type': k.type,
+      'Target': k.target, 'Actual': k.actual, 'Unit': k.unit, 'Status': k.status||'',
+      'Weight %': k.weight, 'Score': k.scoringMode==='binary'?(k.score!=null?k.score:0):Math.round(ach),
+      'Period Type': k.periodType||'', 'Period': k.period, 'Start': k.startDate||'', 'End': k.endDate||'',
+      'Remarks': k.remarks||'', 'Created By': k.createdBy||'', 'Updated By': k.updatedBy||'' };
   });
   exportToExcel(rows, 'AMC_KPIs', 'KPI Report');
 }
@@ -1134,19 +1156,52 @@ function doAssignKPIs(tmplId) {
 
 function kpiAssignmentsHTML() {
   const kpis = STATE.subsidiary==='all' ? DB.kpis : DB.kpis.filter(k=>{ const e=getEmp(k.empId); return e&&e.sub===STATE.subsidiary; });
-  return `<div class="card"><div class="card-header"> <div><div class="card-title">Employee KPI Assignments</div><div class="card-sub">Edit actuals to update scores in real-time</div></div> <button class="btn btn-primary btn-sm" onclick="openInlineKPIModal()">${ICO.plus} Assign KPI</button> </div><div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>KPI</th><th>Type</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Weight</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${kpis.map(k=>{const e=getEmp(k.empId);const ach=PerfEngine.calcAchievement(k);return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:k.empId}</div><div class="emp-id">${k.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600">${k.title}</td> <td><span class="kpi-type-badge kpi-${k.type.toLowerCase()}">${k.type}</span></td> <td style="font-family:var(--mono)">${k.target} ${k.unit}</td> <td><input type="number" class="form-control" style="width:90px;font-size:12px;font-family:var(--mono)" value="${k.actual}" onchange="updateKPIActual('${k.id}',this.value)"></td> <td><div style="display:flex;align-items:center;gap:6px"><div class="progress" style="width:70px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:12px">${Math.round(ach)}%</span></div></td> <td><input type="number" class="form-control" style="width:70px;font-size:12px;font-family:var(--mono);font-weight:700" value="${k.weight}" onchange="updateKPIWeight('${k.id}',this.value)" title="Edit weight (all weights for employee must total 100%)"></td> <td style="font-size:11px;color:var(--gray-400)">${k.period}</td> <td><button class="btn btn-ghost btn-xs" onclick="deleteKPI('${k.id}')" style="color:var(--red)">${ICO.trash}</button></td> </tr>`}).join('')}</tbody> </table></div></div></div>`;
+  // Binary pass/fail summary
+  const bin = kpis.filter(k=>k.scoringMode==='binary');
+  const done = bin.filter(k=>k.status==='Completed').length;
+  const failed = bin.length - done;
+  const passRate = bin.length ? Math.round(done/bin.length*100) : 0;
+  const tiles = `<div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px">
+    <div class="stat-card navy"><div class="stat-info"><div class="stat-label">Total KPIs</div><div class="stat-val">${kpis.length}</div></div></div>
+    <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Binary KPIs</div><div class="stat-val">${bin.length}</div></div></div>
+    <div class="stat-card green"><div class="stat-info"><div class="stat-label">Completed</div><div class="stat-val">${done}</div></div></div>
+    <div class="stat-card red"><div class="stat-info"><div class="stat-label">Not Completed</div><div class="stat-val">${failed}</div></div></div>
+    <div class="stat-card teal"><div class="stat-info"><div class="stat-label">Pass Rate</div><div class="stat-val">${passRate}%</div></div></div>
+  </div>`;
+  return tiles + `<div class="card"><div class="card-header"> <div><div class="card-title">Employee KPI Assignments</div><div class="card-sub">Binary: set status (auto 100/0) · Weighted: edit actual</div></div> <button class="btn btn-primary btn-sm" onclick="openInlineKPIModal()">${ICO.plus} Assign KPI</button> </div><div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>KPI</th><th>Mode</th><th>Target / Status</th><th>Actual</th><th>Score</th><th>Weight</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${kpis.map(k=>{const e=getEmp(k.empId);const ach=PerfEngine.calcAchievement(k);const binary=k.scoringMode==='binary';
+    const tgtCell = binary ? `<select class="form-control" style="width:130px;font-size:12px" onchange="setKpiStatus('${k.id}',this.value)"><option ${k.status!=='Completed'?'selected':''}>Not Completed</option><option ${k.status==='Completed'?'selected':''}>Completed</option></select>` : `<span style="font-family:var(--mono)">${k.target} ${k.unit||''}</span>`;
+    const actCell = binary ? `<span style="color:var(--gray-300)">—</span>` : `<input type="number" class="form-control" style="width:90px;font-size:12px;font-family:var(--mono)" value="${k.actual}" onchange="updateKPIActual('${k.id}',this.value)">`;
+    return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:k.empId}</div><div class="emp-id">${k.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600">${k.title}</td> <td><span class="badge ${binary?'badge-navy':'badge-gray'}" style="font-size:10px">${binary?'Binary':'Weighted'}</span></td> <td>${tgtCell}</td> <td>${actCell}</td> <td><div style="display:flex;align-items:center;gap:6px"><div class="progress" style="width:60px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:12px">${Math.round(ach)}%</span></div></td> <td><input type="number" class="form-control" style="width:65px;font-size:12px;font-family:var(--mono);font-weight:700" value="${k.weight}" onchange="updateKPIWeight('${k.id}',this.value)" title="Weights for an employee should total 100%"></td> <td style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</td> <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openEditKPIModal('${k.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" onclick="deleteKPI('${k.id}')" style="color:var(--red)" title="Delete">${ICO.trash}</button></div></td> </tr>`}).join('')}</tbody> </table></div></div></div>`;
 }
 
+function kpiActor(){ return (STATE.user && (STATE.user.email||STATE.user.name)) || ''; }
+
 function updateKPIActual(kpiId, val) {
-  const k = DB.kpis.find(x=>x.id===kpiId); if (k) { k.actual = parseFloat(val)||0; if(typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k); scheduleSave(); }
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
+  const before = { actual: k.actual };
+  k.actual = parseFloat(val)||0; k.updatedBy = kpiActor();
+  if(typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after:{ actual:k.actual } }); }
+  scheduleSave();
   toast('Score updated','success');
+}
+
+// Binary KPI: set Completed/Not Completed → auto score 100/0.
+function setKpiStatus(kpiId, status){
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
+  const before = { status:k.status, score:k.score };
+  k.status = status; k.score = (status==='Completed')?100:0; k.actual = (status==='Completed')?1:0; k.updatedBy = kpiActor();
+  if(typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after:{ status:k.status, score:k.score } }); }
+  scheduleSave();
+  toast(`Status: ${status} → score ${k.score}`, status==='Completed'?'success':'info');
+  nav('kpi');
 }
 
 function updateKPIWeight(kpiId, val) {
   const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
   const newW = parseFloat(val)||0;
-  k.weight = newW;
-  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k);
+  const before = { weight: k.weight };
+  k.weight = newW; k.updatedBy = kpiActor();
+  if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after:{ weight:newW } }); }
   scheduleSave();
   // Check total for this employee+period
   const empKpis = DB.kpis.filter(x=>x.empId===k.empId&&x.period===k.period);
@@ -1166,27 +1221,127 @@ function deleteKPI(kpiId) {
   toast('KPI deleted','info'); nav('kpi');
 }
 
+// Full KPI edit (name, description, target, dates, period, status, remarks, weight)
+// — updates the existing record in place and writes a before/after audit row.
+function openEditKPIModal(kpiId){
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k){ toast('KPI not found','error'); return; }
+  const bin = k.scoringMode==='binary';
+  openModal('wide', `
+    <div class="modal-header"><span class="modal-title">Edit KPI — ${esc(k.title)}</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:10px"><label class="form-label required">KPI Name</label><input class="form-control" id="ek_title" value="${esc(k.title||'')}"></div>
+      <div class="form-group" style="margin-bottom:10px"><label class="form-label">Description</label><input class="form-control" id="ek_desc" value="${esc(k.description||'')}"></div>
+      ${bin
+        ? `<div class="form-group" style="margin-bottom:10px"><label class="form-label required">Status</label><select class="form-control" id="ek_status"><option ${k.status!=='Completed'?'selected':''}>Not Completed</option><option ${k.status==='Completed'?'selected':''}>Completed</option></select></div>`
+        : `<div class="form-row cols-2"><div class="form-group"><label class="form-label">Target</label><input class="form-control" id="ek_target" type="number" value="${k.target||0}"></div><div class="form-group"><label class="form-label">Unit</label><input class="form-control" id="ek_unit" value="${esc(k.unit||'')}"></div></div>`}
+      <div class="form-row cols-3">
+        <div class="form-group"><label class="form-label">Weight (%)</label><input class="form-control" id="ek_weight" type="number" value="${k.weight||0}"></div>
+        <div class="form-group"><label class="form-label">Period Type</label><select class="form-control" id="ek_ptype"><option ${k.periodType==='Monthly'?'selected':''}>Monthly</option><option ${k.periodType==='Quarterly'||!k.periodType?'selected':''}>Quarterly</option><option ${k.periodType==='Yearly'?'selected':''}>Yearly</option></select></div>
+        <div class="form-group"><label class="form-label">Period Label</label><input class="form-control" id="ek_period" value="${esc(k.period||'')}"></div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="ek_start" type="date" value="${k.startDate||''}"></div>
+        <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="ek_end" type="date" value="${k.endDate||''}"></div>
+        <div class="form-group"><label class="form-label">Remarks</label><input class="form-control" id="ek_remarks" value="${esc(k.remarks||'')}"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveEditKPI('${k.id}')">Save Changes</button></div>`);
+}
+
+function saveEditKPI(kpiId){
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
+  const bin = k.scoringMode==='binary';
+  const before = { title:k.title, target:k.target, status:k.status, score:k.score, weight:k.weight, period:k.period, startDate:k.startDate, endDate:k.endDate };
+  k.title = sanitizeText(document.getElementById('ek_title').value) || k.title;
+  k.description = sanitizeText(document.getElementById('ek_desc').value);
+  k.weight = parseFloat(document.getElementById('ek_weight').value)||0;
+  k.periodType = document.getElementById('ek_ptype').value;
+  k.period = sanitizeText(document.getElementById('ek_period').value);
+  k.startDate = document.getElementById('ek_start').value||'';
+  k.endDate = document.getElementById('ek_end').value||'';
+  k.remarks = sanitizeText(document.getElementById('ek_remarks').value);
+  if (bin) {
+    k.status = document.getElementById('ek_status').value;
+    k.score = (k.status==='Completed')?100:0; k.actual = (k.status==='Completed')?1:0;
+  } else {
+    k.target = parseFloat(document.getElementById('ek_target').value)||0;
+    k.unit = sanitizeText(document.getElementById('ek_unit').value);
+  }
+  k.updatedBy = kpiActor();
+  const after = { title:k.title, target:k.target, status:k.status, score:k.score, weight:k.weight, period:k.period, startDate:k.startDate, endDate:k.endDate };
+  if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after }); }
+  scheduleSave();
+  closeModal(); toast('KPI updated','success'); nav('kpi');
+}
+
+function ikToggleMode(){
+  const binary = (document.getElementById('ik_mode')||{}).value==='binary';
+  const w=document.getElementById('ik_weighted'), b=document.getElementById('ik_binary');
+  if(w) w.style.display = binary?'none':'';
+  if(b) b.style.display = binary?'':'none';
+}
 function openInlineKPIModal() {
   openModal('wide', `
-    <div class="modal-header"><span class="modal-title">Assign Individual KPI</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="ik_emp">${filteredEmps().map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label required">KPI Type</label> <select class="form-control" id="ik_type"><option>Numerical</option><option>Percent</option><option>Time</option><option>Binary</option></select> </div> </div> <div class="form-group" style="margin-bottom:12px"><label class="form-label required">KPI Title</label><input class="form-control" id="ik_title" placeholder="e.g. Monthly Revenue Target"></div> <div class="form-row cols-3"> <div class="form-group"><label class="form-label required">Target</label><input class="form-control" id="ik_target" type="number"></div> <div class="form-group"><label class="form-label required">Actual</label><input class="form-control" id="ik_actual" type="number"></div> <div class="form-group"><label class="form-label">Unit</label><input class="form-control" id="ik_unit" placeholder="%,days,USD…"></div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Weight (%)</label><input class="form-control" id="ik_weight" type="number" value="25" min="1" max="100"></div> <div class="form-group"><label class="form-label">Period</label><select class="form-control" id="ik_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option></select></div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveInlineKPI()">Save KPI</button> </div>`);
+    <div class="modal-header"><span class="modal-title">Assign KPI</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label required">Employee</label><select class="form-control" id="ik_emp">${filteredEmps().map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label required">Scoring Mode</label><select class="form-control" id="ik_mode" onchange="ikToggleMode()"><option value="weighted">Weighted (target / actual)</option><option value="binary">Binary (Pass / Fail)</option></select></div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">KPI Name</label><input class="form-control" id="ik_title" placeholder="e.g. Submit Monthly Report"></div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label">Description</label><input class="form-control" id="ik_desc" placeholder="Optional"></div>
+      <div id="ik_weighted">
+        <div class="form-row cols-2"><div class="form-group"><label class="form-label">KPI Type</label><select class="form-control" id="ik_type"><option>Numerical</option><option>Percent</option><option>Time</option><option>Binary</option></select></div><div class="form-group"><label class="form-label">Unit</label><input class="form-control" id="ik_unit" placeholder="%,days,USD…"></div></div>
+        <div class="form-row cols-2"><div class="form-group"><label class="form-label">Target</label><input class="form-control" id="ik_target" type="number"></div><div class="form-group"><label class="form-label">Actual</label><input class="form-control" id="ik_actual" type="number"></div></div>
+      </div>
+      <div id="ik_binary" style="display:none">
+        <div class="form-group"><label class="form-label required">Status</label><select class="form-control" id="ik_status"><option>Not Completed</option><option>Completed</option></select><div style="font-size:11px;color:var(--gray-400);margin-top:3px">Completed = 100 · Not Completed = 0 (auto)</div></div>
+      </div>
+      <div class="form-row cols-3" style="margin-top:6px">
+        <div class="form-group"><label class="form-label required">Weight (%)</label><input class="form-control" id="ik_weight" type="number" value="25" min="0" max="100"></div>
+        <div class="form-group"><label class="form-label required">Period Type</label><select class="form-control" id="ik_ptype"><option>Monthly</option><option selected>Quarterly</option><option>Yearly</option></select></div>
+        <div class="form-group"><label class="form-label">Period Label</label><select class="form-control" id="ik_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option><option>Annual-2026</option></select></div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="ik_start" type="date"></div>
+        <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="ik_end" type="date"></div>
+        <div class="form-group"><label class="form-label">Remarks</label><input class="form-control" id="ik_remarks" placeholder="Optional"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveInlineKPI()">Save KPI</button></div>`);
 }
 
 function saveInlineKPI() {
-  const title = (document.getElementById('ik_title')||{}).value;
-  if (!title) { toast('Title required','error'); return; }
+  const title = sanitizeText((document.getElementById('ik_title')||{}).value);
+  if (!title) { toast('KPI name required','error'); return; }
   const empId = document.getElementById('ik_emp').value;
+  const mode  = document.getElementById('ik_mode').value;
   const period = document.getElementById('ik_period').value;
-  const weight = parseFloat(document.getElementById('ik_weight').value)||25;
-  const kpi = { id:newKpiId(), empId, templateId:'', title, type:document.getElementById('ik_type').value, period, target:parseFloat(document.getElementById('ik_target').value)||0, actual:parseFloat(document.getElementById('ik_actual').value)||0, unit:document.getElementById('ik_unit').value, weight, notes:'' };
+  const periodType = document.getElementById('ik_ptype').value;
+  const startDate = document.getElementById('ik_start').value || '';
+  const endDate = document.getElementById('ik_end').value || '';
+  const weight = parseFloat(document.getElementById('ik_weight').value)||0;
+  const remarks = sanitizeText(document.getElementById('ik_remarks').value);
+  const description = sanitizeText(document.getElementById('ik_desc').value);
+  const actor = (STATE.user && (STATE.user.email||STATE.user.name)) || '';
+  let kpi;
+  if (mode==='binary') {
+    const status = document.getElementById('ik_status').value;
+    const done = status==='Completed';
+    kpi = { id:newKpiId(), empId, templateId:'', title, description, type:'Binary', scoringMode:'binary',
+      status, score: done?100:0, target:1, actual: done?1:0, unit:'', weight, period, periodType, startDate, endDate,
+      remarks, notes:'', createdBy:actor, updatedBy:actor };
+  } else {
+    kpi = { id:newKpiId(), empId, templateId:'', title, description, type:document.getElementById('ik_type').value, scoringMode:'weighted',
+      status:'', score:null, target:parseFloat(document.getElementById('ik_target').value)||0, actual:parseFloat(document.getElementById('ik_actual').value)||0,
+      unit:document.getElementById('ik_unit').value, weight, period, periodType, startDate, endDate, remarks, notes:'', createdBy:actor, updatedBy:actor };
+  }
   DB.kpis.push(kpi);
-  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(kpi);
+  if (typeof SupaWrite!=='undefined') { SupaWrite.saveKPI(kpi); SupaWrite.saveKpiAudit({ kpiId:kpi.id, changedBy:actor, before:{}, after:{ created:title, mode, status:kpi.status, score:kpi.score } }); }
   scheduleSave();
-  // Check total
-  const total = DB.kpis.filter(k=>k.empId===empId&&k.period===period).reduce((s,k)=>s+k.weight,0);
-  closeModal(); toast(`KPI added (weight total for this employee: ${total}%)${Math.abs(total-100)>0.01?' —  adjust to reach 100%':'  ✓'}`, Math.abs(total-100)>0.01?'warning':'success');
+  const total = DB.kpis.filter(k=>k.empId===empId&&k.period===period).reduce((s,k)=>s+(k.weight||0),0);
+  closeModal(); toast(`KPI added (weight total for this employee: ${total}%)${Math.abs(total-100)>0.01?' — adjust to reach 100%':' ✓'}`, Math.abs(total-100)>0.01?'warning':'success');
   nav('kpi');
-
-  scheduleSave();
 }
 
 function kpiScoresHTML() {

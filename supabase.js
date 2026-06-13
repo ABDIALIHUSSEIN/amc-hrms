@@ -12,7 +12,12 @@
 // objects/arrays (e.g. the JSONB `doc` of loans/notices). Numbers/dates/etc.
 // pass through untouched. HR free-text never legitimately needs < or >.
 function sanitizeDeep(val) {
-  if (typeof val === 'string') return val.replace(/[<>]/g, '');
+  if (typeof val === 'string') return val
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
   if (Array.isArray(val)) return val.map(sanitizeDeep);
   if (val && typeof val === 'object') {
     const out = {};
@@ -354,6 +359,11 @@ const SupaSync = {
         title:      k.title, type: k.type, unit: k.unit,
         target:     parseFloat(k.target), actual: parseFloat(k.actual),
         weight:     parseFloat(k.weight), period: k.period, notes: k.notes || '',
+        scoringMode: k.scoring_mode || 'weighted',
+        status:     k.status || '', score: (k.score != null ? parseFloat(k.score) : null),
+        periodType: k.period_type || '', startDate: k.start_date || '', endDate: k.end_date || '',
+        remarks:    k.remarks || '', description: k.description || '',
+        createdBy:  k.created_by || '', updatedBy: k.updated_by || '',
       }));
     }
     if (eduRecs?.length) {
@@ -536,8 +546,19 @@ const SupaWrite = {
         title: k.title, type: k.type, unit: k.unit||null,
         target: k.target, actual: k.actual, weight: k.weight,
         period: k.period, notes: k.notes||null,
+        scoring_mode: k.scoringMode||'weighted',
+        status: k.status||null, score: (k.score!=null ? k.score : null),
+        period_type: k.periodType||null, start_date: k.startDate||null, end_date: k.endDate||null,
+        remarks: k.remarks||null, description: k.description||null,
+        created_by: k.createdBy||null, updated_by: k.updatedBy||null,
+        updated_at: new Date().toISOString(),
       });
     } catch(e) { console.warn('SupaWrite.saveKPI:', e.message); }
+  },
+  async saveKpiAudit(entry) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.insert('kpi_audit', { kpi_id: entry.kpiId, changed_by: entry.changedBy||null, before: entry.before||{}, after: entry.after||{} }); }
+    catch(e) { console.warn('SupaWrite.saveKpiAudit:', e.message); }
   },
   async deleteKPI(kpiId) {
     if (!SupaSync.connected || kpiId == null) return;
