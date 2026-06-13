@@ -1298,9 +1298,9 @@ function openKPIDetail(kpiId){
       </div>
       ${canApprove ? `<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${
         k.approvalStatus==='Approved'
-          ? `<span class="badge badge-green" style="padding:6px 12px;font-size:12px">✓ Approved</span><span style="font-size:12px;color:var(--gray-500)">Change:</span><button class="btn btn-sm" style="background:#fff;color:var(--red);border:1.5px solid var(--red)" onclick="approveKPI('${k.id}','Rejected')">Reject</button><button class="btn btn-sm btn-outline" onclick="approveKPI('${k.id}','Pending')">Reset to Pending</button>`
+          ? `<span class="badge badge-green" style="padding:6px 12px;font-size:12px">✓ Approved</span><span style="font-size:11px;color:var(--gray-400);cursor:pointer;text-decoration:underline" onclick="approveKPI('${k.id}','Pending')">change</span>`
         : k.approvalStatus==='Rejected'
-          ? `<span class="badge badge-red" style="padding:6px 12px;font-size:12px">✕ Rejected</span><span style="font-size:12px;color:var(--gray-500)">Change:</span><button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="approveKPI('${k.id}','Approved')">Approve</button><button class="btn btn-sm btn-outline" onclick="approveKPI('${k.id}','Pending')">Reset to Pending</button>`
+          ? `<span class="badge badge-red" style="padding:6px 12px;font-size:12px">✕ Rejected</span><span style="font-size:11px;color:var(--gray-400);cursor:pointer;text-decoration:underline" onclick="approveKPI('${k.id}','Pending')">change</span>`
           : `<span style="font-size:12px;color:var(--gray-500)">Decision:</span><button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="approveKPI('${k.id}','Approved')">Approve</button><button class="btn btn-sm" style="background:#fff;color:var(--red);border:1.5px solid var(--red)" onclick="approveKPI('${k.id}','Rejected')">Reject</button>`
       }</div>` : `<div style="margin-bottom:16px;font-size:12px;color:var(--gray-500)">Approval: <strong>${esc(k.approvalStatus||'Pending')}</strong> — only managers can change.</div>`}
 
