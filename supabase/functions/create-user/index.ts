@@ -72,6 +72,13 @@ Deno.serve(async (req) => {
     const reqId = body.id ? String(body.id) : null;
     if (role === "super_admin" && callerRole !== "super_admin") return json({ error: "Only a super admin can create super admins" }, 403);
 
+    // Employee-role users must be linked to a real employee record.
+    if (role === "employee") {
+      if (!empId) return json({ error: "Please link an employee before creating this user" }, 400);
+      const { data: emp } = await admin.from("employees").select("employee_number").eq("employee_number", empId).maybeSingle();
+      if (!emp) return json({ error: "Linked employee not found" }, 400);
+    }
+
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email, password, email_confirm: true, user_metadata: { username, role },
     });
