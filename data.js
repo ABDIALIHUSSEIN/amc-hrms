@@ -264,7 +264,8 @@ const PerfEngine = {
     return Math.min(120, (kpi.actual / kpi.target) * 100);
   },
   calcEmployeeScore(empId) {
-    const kpis = DB.kpis.filter(k => k.empId === empId);
+    // Rejected KPIs are excluded from the official score (Approved + Pending count).
+    const kpis = DB.kpis.filter(k => k.empId === empId && k.approvalStatus !== 'Rejected');
     if (!kpis.length) return null;
     const totalWeight = kpis.reduce((s, k) => s + k.weight, 0);
     if (totalWeight === 0) return null;
