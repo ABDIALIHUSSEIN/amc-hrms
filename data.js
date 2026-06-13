@@ -254,6 +254,8 @@ const PayrollEngine = {
 
 const PerfEngine = {
   calcAchievement(kpi) {
+    // Binary scoring mode: pass/fail only — Completed=100, else 0.
+    if (kpi.scoringMode === 'binary') return kpi.status === 'Completed' ? 100 : 0;
     if (!kpi.target || kpi.target === 0) return 0;
     if (kpi.type === 'Time') return kpi.actual <= kpi.target ? Math.min(120, (kpi.target / kpi.actual) * 100) : (kpi.target / kpi.actual) * 100;
     if (kpi.type === 'Binary') return kpi.actual >= 1 ? 100 : 0;
