@@ -942,11 +942,22 @@ function buildEmpKPIs(empId) {
     </div> <div class="table-wrap"><table class="table"> <thead><tr><th>KPI</th><th>Type</th><th>Target</th><th>Actual</th><th>Achievement</th><th>Weight</th><th>Approval</th><th></th></tr></thead> <tbody>${kpis.map(k=>{const ach=PerfEngine.calcAchievement(k);const cmts=(DB.kpiComments||[]).filter(c=>c.kpiId===k.id).length;const apB=({Approved:'badge-green',Rejected:'badge-red'})[k.approvalStatus]||'badge-amber';return `<tr> <td style="font-weight:600">${k.title}</td> <td><span class="kpi-type-badge kpi-${k.type.toLowerCase()}">${k.type}</span></td> <td style="font-family:var(--mono)">${k.target} ${k.unit}</td> <td style="font-family:var(--mono)">${k.actual} ${k.unit}</td> <td><div style="display:flex;align-items:center;gap:8px"> <div class="progress" style="width:80px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div> <span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:13px">${Math.round(ach)}%</span> </div></td> <td><span style="font-family:var(--mono);font-weight:700">${k.weight}%</span></td> <td><span class="badge ${apB}" style="font-size:10px">${k.approvalStatus||'Pending'}</span></td> <td><button class="btn btn-ghost btn-xs" onclick="openKPIDetail('${k.id}')" title="Reviews / Comments${cmts?` (${cmts})`:''}">${ICO.eye}${cmts?` ${cmts}`:''}</button></td> </tr>`}).join('')}</tbody> </table></div>`;
 }
 
-function saveNewEmp() {
+// True if an employee_number already exists — checks local cache AND the DB
+// (the cache may be partial/subsidiary-scoped, so the DB check is authoritative).
+async function empNumberTaken(num){
+  if (!num) return false;
+  if (DB.employees.some(e=>e.id===num)) return true;
+  try {
+    const r = await SUPA.select('employees', `employee_number=eq.${encodeURIComponent(num)}&select=employee_number&limit=1`);
+    return Array.isArray(r) && r.length > 0;
+  } catch(e){ return false; }
+}
+
+async function saveNewEmp() {
   const name = (document.getElementById('ne_name')||{}).value;
   const id   = (document.getElementById('ne_id')||{}).value;
   if (!name||!id) { toast('Name and Employee ID are required','error'); return; }
-  if (DB.employees.find(e=>e.id===id)) { toast('Employee ID already exists','error'); return; }
+  if (await empNumberTaken(id)) { toast('Employee number already exists','error'); return; }
   DB.employees.push({
     id, name, title: document.getElementById('ne_title').value,
     dept: document.getElementById('ne_dept').value, sub: document.getElementById('ne_sub').value,
@@ -4494,7 +4505,7 @@ function filterEmpDepts() {
   dSel.innerHTML = '<option value="">Select department…</option>' + filtered.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
 }
 
-function saveEmployeeForm(existingId) {
+async function saveEmployeeForm(existingId) {
   const name  = sanitizeText(document.getElementById('ea_name')?.value);
   const email = document.getElementById('ea_email')?.value?.trim();
   const sub   = document.getElementById('ea_sub')?.value;
@@ -4527,6 +4538,8 @@ function saveEmployeeForm(existingId) {
     return mt ? Math.max(m, parseInt(mt[1], 10)) : m;
   }, 0);
   const empId = existingId || `${prefix}${String(maxNum + 1).padStart(4, '0')}`;
+  // New employee: guarantee the number isn't already taken (cache + DB).
+  if (!existingId && await empNumberTaken(empId)) { toast('Employee number already exists — please try again', 'error'); return; }
 
   const empData = {
     id:              empId,
