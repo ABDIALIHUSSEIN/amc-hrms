@@ -1038,6 +1038,13 @@ function kpiTab(tab, el) {
 /* ═══════════ TASKS (linked to KPIs) ═══════════ */
 function newTaskId(){ return 'TSK_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 function taskActor(){ return (STATE.user && (STATE.user.email||STATE.user.name)) || ''; }
+// Who a task can be assigned to: staff see full filtered list; employees use the
+// name-only directory so they can assign to any colleague (no salary exposure).
+function assigneeList(){
+  const staff = !['employee','viewer'].includes(STATE.role);
+  const src = staff ? filteredEmps() : (DB.empDirectory||[]);
+  return src.map(e=>({ id:e.id, name:e.name }));
+}
 
 // KPI auto-progress: actual = number of completed linked tasks (achievement = completed/target).
 function recomputeKpiFromTasks(kpiId){
@@ -1079,7 +1086,7 @@ function openTaskModal(taskId){
       <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Task Title</label><input class="form-control" id="tk_title" value="${t?esc(t.title):''}" placeholder="e.g. Screen 10 CVs"></div>
       <div class="form-group" style="margin-bottom:12px"><label class="form-label">Description</label><input class="form-control" id="tk_desc" value="${t?esc(t.description):''}"></div>
       <div class="form-row cols-2">
-        <div class="form-group"><label class="form-label required">Assign to Employee</label><select class="form-control" id="tk_emp">${filteredEmps().map(e=>`<option value="${e.id}" ${t&&t.empId===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label required">Assign to Employee</label><select class="form-control" id="tk_emp">${assigneeList().map(e=>`<option value="${e.id}" ${t&&t.empId===e.id?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label">Linked KPI</label><select class="form-control" id="tk_kpi"><option value="">— none —</option>${(DB.kpis||[]).map(k=>{const e=getEmp(k.empId);return `<option value="${k.id}" ${t&&t.kpiId===k.id?'selected':''}>${esc(k.title)}${e?' · '+e.name:''}</option>`;}).join('')}</select></div>
       </div>
       <div class="form-row cols-2">
@@ -1105,7 +1112,9 @@ function saveTaskForm(taskId){
   recomputeKpiFromTasks(kpiId);
   if (isNew && empId) notifyUser(empId, 'task', `New task assigned: ${title}`);
   scheduleSave();
-  closeModal(); toast(isNew?'Task created':'Task updated','success'); kpiTab('tasks', document.querySelector('#kpiTabs .tab:nth-child(4)'));
+  if (isNew && empId && empId !== ((STATE.user&&STATE.user.empId)||'')) { /* peer-assigned notification already fired via notifyUser above */ }
+  closeModal(); toast(isNew?'Task created':'Task updated','success');
+  if (document.getElementById('kpiTabs')) kpiTab('tasks', document.querySelector('#kpiTabs .tab:nth-child(4)')); else nav('kpi');
 }
 
 function setTaskStatus(taskId, status){
@@ -1183,7 +1192,7 @@ function selfMyTasksHTML(empId){
     <div class="stat-card green"><div class="stat-val">${done.length}</div><div class="stat-lbl">Completed</div></div>
     <div class="stat-card ${over?'red':'navy'}"><div class="stat-val">${over}</div><div class="stat-lbl">Overdue</div></div>
   </div>
-  <div class="card"><div class="card-header"><span class="card-title">My Tasks — Pending (${pending.length})</span></div>
+  <div class="card"><div class="card-header"><span class="card-title">My Tasks — Pending (${pending.length})</span><button class="btn btn-primary btn-sm" onclick="openTaskModal()">${ICO.plus} Assign Task to Colleague</button></div>
     <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Linked KPI</th><th>Due</th><th>Status</th></tr></thead>
     <tbody>${pending.length ? pending.map(taskRow).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px">No pending tasks 🎉</td></tr>'}</tbody></table></div></div></div>
   <div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">Completed Tasks (${done.length})</span></div>

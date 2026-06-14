@@ -415,8 +415,10 @@ const SupaSync = {
       SUPA.select('projects', 'deleted_at=is.null&order=created_at.desc&limit=500'),
       SUPA.select('appraisal_cycles', 'order=created_at.desc&limit=200'),
       SUPA.select('notifications', 'order=created_at.desc&limit=200'),
+      SUPA.select('emp_directory', 'select=*&order=name&limit=3000'),
     ]);
     const ok = i => r[i].status==='fulfilled' && Array.isArray(r[i].value);
+    if (ok(4)) DB.empDirectory = r[4].value.map(e => ({ id:e.id, name:e.name||'', dept:e.dept||'', sub:e.sub||'', title:e.title||'' }));
     if (ok(0)) DB.tasks = r[0].value.map(t => ({ id:t.id, kpiId:t.kpi_id||'', empId:t.employee_id||'', title:t.title||'', description:t.description||'', status:t.status||'To Do', dueDate:t.due_date||'', actualResult:t.actual_result||'', comments:t.comments||'', evidenceUrl:t.evidence_url||'', completionDate:t.completion_date||'', createdBy:t.created_by||'', updatedBy:t.updated_by||'' }));
     if (ok(1)) DB.projects = r[1].value.map(p => ({ id:p.id, name:p.name||'', owner:p.owner||'', startDate:p.start_date||'', endDate:p.end_date||'', status:p.status||'Active', assignedEmployees:p.assigned_employees||[], createdBy:p.created_by||'' }));
     if (ok(2)) DB.appraisalCycles = r[2].value.map(c => ({ id:c.id, name:c.name||'', periodType:c.period_type||'Quarterly', deptId:c.department_id||'', startDate:c.start_date||'', endDate:c.end_date||'', active:c.active!==false }));
