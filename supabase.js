@@ -404,7 +404,22 @@ const SupaSync = {
     // ── Phase 2 document-store collections (loans, advances, notices, etc.) ──
     await this.loadDocs();
     await this.loadKpiExtras();
+    await this.loadP2();
     console.log(`✓ Supabase loaded: ${DB.employees.length} employees, ${DB.kpis.length} KPIs`);
+  },
+
+  async loadP2() {
+    const r = await Promise.allSettled([
+      SUPA.select('tasks', 'deleted_at=is.null&order=created_at.desc&limit=2000'),
+      SUPA.select('projects', 'deleted_at=is.null&order=created_at.desc&limit=500'),
+      SUPA.select('appraisal_cycles', 'order=created_at.desc&limit=200'),
+      SUPA.select('notifications', 'order=created_at.desc&limit=200'),
+    ]);
+    const ok = i => r[i].status==='fulfilled' && Array.isArray(r[i].value);
+    if (ok(0)) DB.tasks = r[0].value.map(t => ({ id:t.id, kpiId:t.kpi_id||'', empId:t.employee_id||'', title:t.title||'', description:t.description||'', status:t.status||'To Do', dueDate:t.due_date||'', actualResult:t.actual_result||'', comments:t.comments||'', evidenceUrl:t.evidence_url||'', completionDate:t.completion_date||'', createdBy:t.created_by||'', updatedBy:t.updated_by||'' }));
+    if (ok(1)) DB.projects = r[1].value.map(p => ({ id:p.id, name:p.name||'', owner:p.owner||'', startDate:p.start_date||'', endDate:p.end_date||'', status:p.status||'Active', assignedEmployees:p.assigned_employees||[], createdBy:p.created_by||'' }));
+    if (ok(2)) DB.appraisalCycles = r[2].value.map(c => ({ id:c.id, name:c.name||'', periodType:c.period_type||'Quarterly', deptId:c.department_id||'', startDate:c.start_date||'', endDate:c.end_date||'', active:c.active!==false }));
+    if (ok(3)) DB.notifications = r[3].value.map(n => ({ id:n.id, userEmail:n.user_email||'', empId:n.emp_id||'', type:n.type||'', text:n.text||'', link:n.link||'', read:!!n.is_read, time:n.created_at }));
   },
 
   async loadKpiExtras() {
@@ -585,6 +600,44 @@ const SupaWrite = {
     if (!SupaSync.connected) return;
     try { await SUPA.insert('kpi_reviews', { kpi_id: r.kpiId, employee_id: r.empId||null, reviewer: r.reviewer||null, period: r.period||null, rating: r.rating||null, score: (r.score!=null?r.score:null), notes: r.notes||null }); }
     catch(e) { console.warn('SupaWrite.saveKpiReview:', e.message); }
+  },
+  async saveTask(t) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.upsert('tasks', { id: t.id, kpi_id: t.kpiId||null, employee_id: t.empId||null, title: t.title, description: t.description||null,
+      status: t.status||'To Do', due_date: t.dueDate||null, actual_result: t.actualResult||null, comments: t.comments||null,
+      evidence_url: t.evidenceUrl||null, completion_date: t.completionDate||null, created_by: t.createdBy||null, updated_by: t.updatedBy||null, updated_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.saveTask:', e.message); }
+  },
+  async deleteTask(id) {  // soft delete
+    if (!SupaSync.connected) return;
+    try { await SUPA.update('tasks', `id=eq.${encodeURIComponent(id)}`, { deleted_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.deleteTask:', e.message); }
+  },
+  async saveProject(p) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.upsert('projects', { id: p.id, name: p.name, owner: p.owner||null, start_date: p.startDate||null, end_date: p.endDate||null,
+      status: p.status||'Active', assigned_employees: p.assignedEmployees||[], created_by: p.createdBy||null, updated_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.saveProject:', e.message); }
+  },
+  async deleteProject(id) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.update('projects', `id=eq.${encodeURIComponent(id)}`, { deleted_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.deleteProject:', e.message); }
+  },
+  async saveAppraisalCycle(c) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.upsert('appraisal_cycles', { id: c.id, name: c.name, period_type: c.periodType||'Quarterly', department_id: c.deptId||null, start_date: c.startDate||null, end_date: c.endDate||null, active: c.active!==false }); }
+    catch(e) { console.warn('SupaWrite.saveAppraisalCycle:', e.message); }
+  },
+  async saveNotification(n) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.insert('notifications', { user_email: n.userEmail||null, emp_id: n.empId||null, type: n.type||null, text: n.text||'', link: n.link||null, is_read: !!n.read }); }
+    catch(e) { console.warn('SupaWrite.saveNotification:', e.message); }
+  },
+  async markNotifRead(id) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.update('notifications', `id=eq.${id}`, { is_read: true }); }
+    catch(e) { console.warn('SupaWrite.markNotifRead:', e.message); }
   },
   async deleteKPI(kpiId) {
     if (!SupaSync.connected || kpiId == null) return;

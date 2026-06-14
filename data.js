@@ -103,6 +103,9 @@ kpiTemplates: [
 kpis: [],
 kpiComments: [],
 kpiReviews: [],
+tasks: [],
+projects: [],
+appraisalCycles: [],
 
 attendance: [],
 
