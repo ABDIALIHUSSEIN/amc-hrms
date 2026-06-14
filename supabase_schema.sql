@@ -496,4 +496,58 @@ create trigger trg_loans_emp  before insert or update on loans           for eac
 create trigger trg_adv_emp    before insert or update on salary_advances for each row execute function validate_doc_emp();
 create trigger trg_bonus_emp  before insert or update on bonuses         for each row execute function validate_doc_emp();
 
-select 'AMC HRMS production schema + RLS + org seed + Phase 2 doc-sync applied' as status;
+-- ============================================================
+-- KPI/TASK/PROJECT/APPRAISAL/NOTIFICATIONS (spec features)
+-- ============================================================
+alter table kpis add column if not exists project_id text;
+alter table kpis add column if not exists due_date date;
+alter table kpi_audit add column if not exists change_reason text;
+
+create table if not exists tasks (
+  id text primary key, kpi_id text, employee_id text,
+  title text not null, description text,
+  status text default 'To Do', due_date date,
+  actual_result text, comments text, evidence_url text, completion_date date,
+  created_by text, created_at timestamptz default now(),
+  updated_by text, updated_at timestamptz default now(), deleted_at timestamptz
+);
+create index if not exists idx_tasks_kpi on tasks(kpi_id);
+create index if not exists idx_tasks_emp on tasks(employee_id);
+
+create table if not exists projects (
+  id text primary key, name text not null, owner text,
+  start_date date, end_date date, status text default 'Active',
+  assigned_employees jsonb default '[]',
+  created_by text, created_at timestamptz default now(), updated_at timestamptz default now(), deleted_at timestamptz
+);
+
+create table if not exists appraisal_cycles (
+  id text primary key, name text not null, period_type text default 'Quarterly',
+  department_id text, start_date date, end_date date, active boolean default true,
+  created_at timestamptz default now()
+);
+
+create table if not exists notifications (
+  id bigint generated always as identity primary key,
+  user_email text, emp_id text, type text, text text, link text,
+  is_read boolean default false, created_at timestamptz default now()
+);
+create index if not exists idx_notif_user on notifications(user_email);
+
+do $$ declare t text; begin
+  foreach t in array array['tasks','projects','appraisal_cycles','notifications'] loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "read" on %I', t);
+    execute format('drop policy if exists "write" on %I', t);
+  end loop;
+end $$;
+create policy "read"  on tasks for select to authenticated using (is_staff() or employee_id = my_emp_id());
+create policy "write" on tasks for all to authenticated using (is_staff() or employee_id = my_emp_id()) with check (is_staff() or employee_id = my_emp_id());
+create policy "read"  on projects for select to authenticated using (is_staff());
+create policy "write" on projects for all to authenticated using (is_hr()) with check (is_hr());
+create policy "read"  on appraisal_cycles for select to authenticated using (true);
+create policy "write" on appraisal_cycles for all to authenticated using (is_hr()) with check (is_hr());
+create policy "read"  on notifications for select to authenticated using (is_staff() or lower(user_email)=lower(auth.jwt()->>'email'));
+create policy "write" on notifications for all to authenticated using (true) with check (true);
+
+select 'AMC HRMS production schema + RLS + org seed + Phase 2 doc-sync + spec features applied' as status;
