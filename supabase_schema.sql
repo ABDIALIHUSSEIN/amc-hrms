@@ -541,8 +541,13 @@ do $$ declare t text; begin
     execute format('drop policy if exists "write" on %I', t);
   end loop;
 end $$;
-create policy "read"  on tasks for select to authenticated using (is_staff() or employee_id = my_emp_id());
-create policy "write" on tasks for all to authenticated using (is_staff() or employee_id = my_emp_id()) with check (is_staff() or employee_id = my_emp_id());
+create policy "read"  on tasks for select to authenticated using (is_staff() or employee_id = my_emp_id() or created_by = (auth.jwt() ->> 'email'));
+create policy "write" on tasks for all to authenticated using (is_staff() or employee_id = my_emp_id() or created_by = (auth.jwt() ->> 'email')) with check (is_staff() or employee_id = my_emp_id() or created_by = (auth.jwt() ->> 'email'));
+-- Name-only directory (no salary) so employees can pick a colleague to assign a task.
+create or replace view emp_directory as
+  select employee_number as id, full_name as name, department_id as dept, subsidiary_id as sub, title
+  from employees where status is null or status not in ('Resigned','Terminated');
+grant select on emp_directory to authenticated;
 create policy "read"  on projects for select to authenticated using (is_staff());
 create policy "write" on projects for all to authenticated using (is_hr()) with check (is_hr());
 create policy "read"  on appraisal_cycles for select to authenticated using (true);
