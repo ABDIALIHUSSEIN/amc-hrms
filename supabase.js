@@ -365,6 +365,7 @@ const SupaSync = {
         remarks:    k.remarks || '', description: k.description || '',
         createdBy:  k.created_by || '', updatedBy: k.updated_by || '',
         approvalStatus: k.approval_status || 'Pending', approvedBy: k.approved_by || '', approvedAt: k.approved_at || '',
+        projectId: k.project_id || '', dueDate: k.due_date || '',
       }));
     }
     if (eduRecs?.length) {
@@ -582,13 +583,14 @@ const SupaWrite = {
         remarks: k.remarks||null, description: k.description||null,
         created_by: k.createdBy||null, updated_by: k.updatedBy||null,
         approval_status: k.approvalStatus||'Pending', approved_by: k.approvedBy||null, approved_at: k.approvedAt||null,
+        project_id: k.projectId||null, due_date: k.dueDate||null,
         updated_at: new Date().toISOString(),
       });
     } catch(e) { console.warn('SupaWrite.saveKPI:', e.message); }
   },
   async saveKpiAudit(entry) {
     if (!SupaSync.connected) return;
-    try { await SUPA.insert('kpi_audit', { kpi_id: entry.kpiId, changed_by: entry.changedBy||null, before: entry.before||{}, after: entry.after||{} }); }
+    try { await SUPA.insert('kpi_audit', { kpi_id: entry.kpiId, changed_by: entry.changedBy||null, before: entry.before||{}, after: entry.after||{}, change_reason: entry.reason||null }); }
     catch(e) { console.warn('SupaWrite.saveKpiAudit:', e.message); }
   },
   async saveKpiComment(c) {
