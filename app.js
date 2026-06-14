@@ -1172,12 +1172,35 @@ function deleteTask(taskId){
 function selfMyTasksHTML(empId){
   const tasks = (DB.tasks||[]).filter(t=>t.empId===empId);
   const today = new Date().toISOString().split('T')[0];
-  return `<div class="card" style="margin-top:20px"><div class="card-header"><span class="card-title">My Tasks (${tasks.length})</span></div>
+  const pending = tasks.filter(t=>t.status!=='Completed');
+  const done = tasks.filter(t=>t.status==='Completed');
+  const over = pending.filter(t=>t.dueDate&&t.dueDate<today).length;
+  const taskRow = (t)=>{ const k=DB.kpis.find(x=>x.id===t.kpiId); const od=t.status!=='Completed'&&t.dueDate&&t.dueDate<today;
+    return `<tr> <td style="font-weight:600;font-size:12px">${esc(t.title)}</td> <td style="font-size:11px">${k?esc(k.title):'—'}</td> <td style="font-size:11px;${od?'color:var(--red);font-weight:700':''}">${t.dueDate||'—'}${od?' ⚠':''}</td>
+      <td><select class="form-control" style="width:135px;font-size:12px" onchange="setTaskStatus('${t.id}',this.value)"><option ${t.status==='To Do'?'selected':''}>To Do</option><option ${t.status==='In Progress'?'selected':''}>In Progress</option><option ${t.status==='Completed'?'selected':''}>Completed</option></select></td> </tr>`; };
+  return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px;margin-bottom:14px">
+    <div class="stat-card amber"><div class="stat-val">${pending.length}</div><div class="stat-lbl">Pending Tasks</div></div>
+    <div class="stat-card green"><div class="stat-val">${done.length}</div><div class="stat-lbl">Completed</div></div>
+    <div class="stat-card ${over?'red':'navy'}"><div class="stat-val">${over}</div><div class="stat-lbl">Overdue</div></div>
+  </div>
+  <div class="card"><div class="card-header"><span class="card-title">My Tasks — Pending (${pending.length})</span></div>
     <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Linked KPI</th><th>Due</th><th>Status</th></tr></thead>
-    <tbody>${tasks.length ? tasks.map(t=>{ const k=DB.kpis.find(x=>x.id===t.kpiId); const over=t.status!=='Completed'&&t.dueDate&&t.dueDate<today;
-      return `<tr> <td style="font-weight:600;font-size:12px">${esc(t.title)}</td> <td style="font-size:11px">${k?esc(k.title):'—'}</td> <td style="font-size:11px;${over?'color:var(--red);font-weight:700':''}">${t.dueDate||'—'}${over?' ⚠':''}</td>
-      <td><select class="form-control" style="width:135px;font-size:12px" onchange="setTaskStatus('${t.id}',this.value)"><option ${t.status==='To Do'?'selected':''}>To Do</option><option ${t.status==='In Progress'?'selected':''}>In Progress</option><option ${t.status==='Completed'?'selected':''}>Completed</option></select></td> </tr>`;
-    }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:20px">No tasks assigned</td></tr>'}</tbody></table></div></div></div>`;
+    <tbody>${pending.length ? pending.map(taskRow).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px">No pending tasks 🎉</td></tr>'}</tbody></table></div></div></div>
+  <div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">Completed Tasks (${done.length})</span></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Linked KPI</th><th>Result</th><th>Completed</th></tr></thead>
+    <tbody>${done.length ? done.map(t=>{ const k=DB.kpis.find(x=>x.id===t.kpiId); return `<tr><td style="font-weight:600;font-size:12px">${esc(t.title)}</td><td style="font-size:11px">${k?esc(k.title):'—'}</td><td style="font-size:11px">${esc(t.actualResult||'—')}</td><td style="font-size:11px">${t.completionDate||'—'}</td></tr>`; }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px">None yet</td></tr>'}</tbody></table></div></div></div>
+  ${selfMyProjectsHTML(empId)}`;
+}
+
+// Projects the employee is assigned to (member or owner).
+function selfMyProjectsHTML(empId){
+  const projects = (DB.projects||[]).filter(p=>p.owner===empId || (p.assignedEmployees||[]).includes(empId));
+  const stBadge = { Active:'badge-green', 'On Hold':'badge-amber', Completed:'badge-blue', Cancelled:'badge-red' };
+  return `<div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">My Projects (${projects.length})</span></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Project</th><th>My Role</th><th>Dates</th><th>Linked KPIs</th><th>Status</th></tr></thead>
+    <tbody>${projects.length ? projects.map(p=>{ const linked=(DB.kpis||[]).filter(k=>k.projectId===p.id).length;
+      return `<tr><td style="font-weight:600;font-size:12px">${esc(p.name)}</td><td style="font-size:11px">${p.owner===empId?'<span class="badge badge-navy">Owner</span>':'Member'}</td><td style="font-size:11px">${p.startDate||'—'} → ${p.endDate||'—'}</td><td style="font-size:12px">${linked}</td><td><span class="badge ${stBadge[p.status]||'badge-gray'}">${p.status}</span></td></tr>`;
+    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:18px">No projects assigned</td></tr>'}</tbody></table></div></div></div>`;
 }
 
 // Dashboard widget: KPI/task performance (HR + manager metrics, #7).
