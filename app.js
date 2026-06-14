@@ -1198,7 +1198,19 @@ function selfMyTasksHTML(empId){
   <div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">Completed Tasks (${done.length})</span></div>
     <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Linked KPI</th><th>Result</th><th>Completed</th></tr></thead>
     <tbody>${done.length ? done.map(t=>{ const k=DB.kpis.find(x=>x.id===t.kpiId); return `<tr><td style="font-weight:600;font-size:12px">${esc(t.title)}</td><td style="font-size:11px">${k?esc(k.title):'—'}</td><td style="font-size:11px">${esc(t.actualResult||'—')}</td><td style="font-size:11px">${t.completionDate||'—'}</td></tr>`; }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px">None yet</td></tr>'}</tbody></table></div></div></div>
+  ${selfTasksIAssignedHTML(empId)}
   ${selfMyProjectsHTML(empId)}`;
+}
+
+// Tasks this user assigned to OTHER people (track what you delegated).
+function selfTasksIAssignedHTML(empId){
+  const me = (STATE.user && (STATE.user.email||STATE.user.name)) || '';
+  const assigned = (DB.tasks||[]).filter(t=>t.createdBy && t.createdBy===me && t.empId!==empId);
+  const nameOf = id => { const e=getEmp(id); if(e) return e.name; const d=(DB.empDirectory||[]).find(x=>x.id===id); return d?d.name:(id||'—'); };
+  const stB = { 'To Do':'badge-gray','In Progress':'badge-amber','Completed':'badge-green' };
+  return `<div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">Tasks I Assigned (${assigned.length})</span></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Assigned To</th><th>Due</th><th>Status</th></tr></thead>
+    <tbody>${assigned.length ? assigned.map(t=>`<tr><td style="font-weight:600;font-size:12px">${esc(t.title)}</td><td style="font-size:12px">${esc(nameOf(t.empId))}</td><td style="font-size:11px">${t.dueDate||'—'}</td><td><span class="badge ${stB[t.status]||'badge-gray'}">${t.status}</span></td></tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:18px">You haven\'t assigned any tasks</td></tr>'}</tbody></table></div></div></div>`;
 }
 
 // Projects the employee is assigned to (member or owner).
