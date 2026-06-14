@@ -647,14 +647,15 @@ function showNotifPanel() {
   });
 }
 function markAllRead() {
-  DB.notifications.forEach(n => n.read = true);
+  DB.notifications.forEach(n => { if(!n.read){ n.read = true; if(typeof SupaWrite!=='undefined' && typeof n.id==='number') SupaWrite.markNotifRead(n.id); } });
+  scheduleSave();
   updateNavBadges();
   const p = document.getElementById('notifPanel');
   if (p) { p.remove(); showNotifPanel(); }
 }
 function handleNotif(id) {
   const n = DB.notifications.find(x => x.id === id);
-  if (n) n.read = true;
+  if (n) { n.read = true; if(typeof SupaWrite!=='undefined' && typeof n.id==='number') SupaWrite.markNotifRead(n.id); scheduleSave(); }
   updateNavBadges();
   const routeMap = { leave:'leave', payroll:'payroll', attendance:'attendance', recruitment:'recruitment', training:'training', disciplinary:'disciplinary', kpi:'kpi' };
   if (n && routeMap[n.type]) nav(routeMap[n.type]);
@@ -1024,12 +1025,12 @@ async function saveEditEmp(id) {
    KPI MANAGEMENT MODULE (Fully editable weights)
 ═══════════════════════════════════════════════════════════ */
 PAGES.kpi = function(wrap) {
-  wrap.innerHTML = `<div class="page"> <div class="page-header"> <div class="page-header-left"> <div class="page-title">KPI Management</div> <div class="page-sub">Create, edit, assign KPI templates · Weights auto-validate to 100% · Real-time score updates</div> </div> <div class="page-actions"> <button class="btn btn-outline btn-sm" onclick="exportKPIs()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="openKPITemplateModal()">${ICO.plus} New Template</button> </div> </div> <div class="tabs" id="kpiTabs"> <div class="tab active" onclick="kpiTab('templates',this)">KPI Templates</div> <div class="tab" onclick="kpiTab('assignments',this)">Employee KPIs</div> <div class="tab" onclick="kpiTab('scores',this)">Scores Overview</div> </div> <div id="kpiBody">${kpiTemplatesHTML()}</div> </div>`;
+  wrap.innerHTML = `<div class="page"> <div class="page-header"> <div class="page-header-left"> <div class="page-title">KPI Management</div> <div class="page-sub">Create, edit, assign KPI templates · Weights auto-validate to 100% · Real-time score updates</div> </div> <div class="page-actions"> <button class="btn btn-outline btn-sm" onclick="exportKPIs()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="openKPITemplateModal()">${ICO.plus} New Template</button> </div> </div> <div class="tabs" id="kpiTabs"> <div class="tab active" onclick="kpiTab('templates',this)">KPI Templates</div> <div class="tab" onclick="kpiTab('assignments',this)">Employee KPIs</div> <div class="tab" onclick="kpiTab('scores',this)">Scores Overview</div> <div class="tab" onclick="kpiTab('tasks',this)">Tasks</div> <div class="tab" onclick="kpiTab('projects',this)">Projects</div> </div> <div id="kpiBody">${kpiTemplatesHTML()}</div> </div>`;
 };
 
 function kpiTab(tab, el) {
   document.querySelectorAll('#kpiTabs .tab').forEach(t=>t.classList.remove('active')); el.classList.add('active');
-  const fns = { templates: kpiTemplatesHTML, assignments: kpiAssignmentsHTML, scores: kpiScoresHTML, tasks: kpiTasksHTML };
+  const fns = { templates: kpiTemplatesHTML, assignments: kpiAssignmentsHTML, scores: kpiScoresHTML, tasks: kpiTasksHTML, projects: kpiProjectsHTML };
   document.getElementById('kpiBody').innerHTML = (fns[tab]||kpiTemplatesHTML)();
 }
 
@@ -1176,6 +1177,62 @@ function selfMyTasksHTML(empId){
       return `<tr> <td style="font-weight:600;font-size:12px">${esc(t.title)}</td> <td style="font-size:11px">${k?esc(k.title):'—'}</td> <td style="font-size:11px;${over?'color:var(--red);font-weight:700':''}">${t.dueDate||'—'}${over?' ⚠':''}</td>
       <td><select class="form-control" style="width:135px;font-size:12px" onchange="setTaskStatus('${t.id}',this.value)"><option ${t.status==='To Do'?'selected':''}>To Do</option><option ${t.status==='In Progress'?'selected':''}>In Progress</option><option ${t.status==='Completed'?'selected':''}>Completed</option></select></td> </tr>`;
     }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:20px">No tasks assigned</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+/* ═══════════ PROJECTS (project-based KPI) ═══════════ */
+function newProjectId(){ return 'PRJ_' + Date.now().toString(36) + Math.random().toString(36).slice(2,4); }
+
+function kpiProjectsHTML(){
+  const projects = DB.projects||[];
+  const stBadge = { Active:'badge-green', 'On Hold':'badge-amber', Completed:'badge-blue', Cancelled:'badge-red' };
+  return `<div class="card"><div class="card-header"><div class="card-title">Projects</div><button class="btn btn-primary btn-sm" onclick="openProjectModal()">${ICO.plus} New Project</button></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Project</th><th>Owner</th><th>Dates</th><th>Team</th><th>Linked KPIs</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${projects.length ? projects.map(p=>{ const owner=getEmp(p.owner); const team=(p.assignedEmployees||[]).length; const linked=(DB.kpis||[]).filter(k=>k.projectId===p.id).length;
+      return `<tr> <td style="font-weight:600;font-size:12px">${esc(p.name)}</td> <td style="font-size:12px">${owner?esc(owner.name):esc(p.owner||'—')}</td>
+      <td style="font-size:11px">${p.startDate||'—'} → ${p.endDate||'—'}</td> <td style="font-size:12px">${team} emp</td> <td style="font-size:12px">${linked}</td>
+      <td><span class="badge ${stBadge[p.status]||'badge-gray'}">${p.status}</span></td>
+      <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openProjectModal('${p.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteProject('${p.id}')" title="Delete">${ICO.trash}</button></div></td> </tr>`;
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">No projects yet</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+function openProjectModal(projId){
+  const p = projId ? (DB.projects||[]).find(x=>x.id===projId) : null;
+  const team = p ? (p.assignedEmployees||[]) : [];
+  openModal('wide', `<div class="modal-header"><span class="modal-title">${p?'Edit':'New'} Project</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label required">Project Name</label><input class="form-control" id="pr_name" value="${p?esc(p.name):''}"></div>
+        <div class="form-group"><label class="form-label">Project Owner</label><select class="form-control" id="pr_owner">${filteredEmps().map(e=>`<option value="${e.id}" ${p&&p.owner===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="pr_start" type="date" value="${p?p.startDate:''}"></div>
+        <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="pr_end" type="date" value="${p?p.endDate:''}"></div>
+        <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="pr_status">${['Active','On Hold','Completed','Cancelled'].map(s=>`<option ${p&&p.status===s?'selected':(!p&&s==='Active'?'selected':'')}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Assigned Employees</label><select class="form-control" id="pr_team" multiple size="5" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}" ${team.includes(e.id)?'selected':''}>${e.name}</option>`).join('')}</select><div style="font-size:11px;color:var(--gray-400);margin-top:3px">Ctrl/Cmd-click to select multiple</div></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProjectForm('${projId||''}')">Save Project</button></div>`);
+}
+
+function saveProjectForm(projId){
+  const name = sanitizeText(document.getElementById('pr_name').value);
+  if (!name) { toast('Project name required','error'); return; }
+  const team = Array.from(document.getElementById('pr_team').selectedOptions).map(o=>o.value);
+  let p = projId ? (DB.projects||[]).find(x=>x.id===projId) : null;
+  const isNew = !p;
+  if (isNew) { p = { id:newProjectId(), createdBy:taskActor() }; (DB.projects=DB.projects||[]).unshift(p); }
+  Object.assign(p, { name, owner:document.getElementById('pr_owner').value, startDate:document.getElementById('pr_start').value||'', endDate:document.getElementById('pr_end').value||'', status:document.getElementById('pr_status').value, assignedEmployees:team });
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveProject(p);
+  scheduleSave();
+  closeModal(); toast(isNew?'Project created':'Project updated','success'); kpiTab('projects', document.querySelector('#kpiTabs .tab:nth-child(5)'));
+}
+
+function deleteProject(projId){
+  if (!confirm('Delete this project?')) return;
+  DB.projects = (DB.projects||[]).filter(x=>x.id!==projId);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteProject(projId);
+  scheduleSave();
+  toast('Project deleted','info'); kpiTab('projects', document.querySelector('#kpiTabs .tab:nth-child(5)'));
 }
 
 // Persisted in-app notification (also fires WhatsApp click-to-send hook later).
@@ -1334,6 +1391,7 @@ function doAssignKPIs(tmplId) {
     if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(kpi);
   });
   scheduleSave();
+  if (typeof notifyUser==='function') notifyUser(empId, 'kpi', `${tmpl.kpis.length} KPIs assigned to you for ${period}`);
   closeModal(); toast(`${tmpl.kpis.length} KPIs assigned to ${getEmpName(empId)} for ${period}`,'success'); kpiTab('assignments', document.querySelector('#kpiTabs .tab:nth-child(2)'));
 }
 
@@ -1427,6 +1485,7 @@ function openEditKPIModal(kpiId){
         <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="ek_end" type="date" value="${k.endDate||''}"></div>
         <div class="form-group"><label class="form-label">Remarks</label><input class="form-control" id="ek_remarks" value="${esc(k.remarks||'')}"></div>
       </div>
+      <div class="form-group"><label class="form-label">Reason for change (audit trail)</label><input class="form-control" id="ek_reason" placeholder="Why is this KPI being changed?"></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveEditKPI('${k.id}')">Save Changes</button></div>`);
 }
@@ -1452,7 +1511,8 @@ function saveEditKPI(kpiId){
   }
   k.updatedBy = kpiActor();
   const after = { title:k.title, target:k.target, status:k.status, score:k.score, weight:k.weight, period:k.period, startDate:k.startDate, endDate:k.endDate };
-  if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after }); }
+  const reason = sanitizeText((document.getElementById('ek_reason')||{}).value);
+  if (typeof SupaWrite!=='undefined'){ SupaWrite.saveKPI(k); SupaWrite.saveKpiAudit({ kpiId:k.id, changedBy:kpiActor(), before, after, reason }); }
   scheduleSave();
   closeModal(); toast('KPI updated','success'); nav('kpi');
 }
@@ -1565,6 +1625,9 @@ function openInlineKPIModal() {
       <div class="form-row cols-3">
         <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="ik_start" type="date"></div>
         <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="ik_end" type="date"></div>
+        <div class="form-group"><label class="form-label">Link to Project</label><select class="form-control" id="ik_project"><option value="">— none —</option>${(DB.projects||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row cols-2">
         <div class="form-group"><label class="form-label">Remarks</label><input class="form-control" id="ik_remarks" placeholder="Optional"></div>
       </div>
     </div>
@@ -1596,10 +1659,12 @@ function saveInlineKPI() {
       status:'', score:null, target:parseFloat(document.getElementById('ik_target').value)||0, actual:parseFloat(document.getElementById('ik_actual').value)||0,
       unit:document.getElementById('ik_unit').value, weight, period, periodType, startDate, endDate, remarks, notes:'', createdBy:actor, updatedBy:actor };
   }
+  kpi.projectId = document.getElementById('ik_project')?.value || '';
   DB.kpis.push(kpi);
   if (typeof SupaWrite!=='undefined') { SupaWrite.saveKPI(kpi); SupaWrite.saveKpiAudit({ kpiId:kpi.id, changedBy:actor, before:{}, after:{ created:title, mode, status:kpi.status, score:kpi.score } }); }
   scheduleSave();
   const total = DB.kpis.filter(k=>k.empId===empId&&k.period===period).reduce((s,k)=>s+(k.weight||0),0);
+  if (typeof notifyUser==='function') notifyUser(empId, 'kpi', `New KPI assigned: ${title}`);
   closeModal(); toast(`KPI added (weight total for this employee: ${total}%)${Math.abs(total-100)>0.01?' — adjust to reach 100%':' ✓'}`, Math.abs(total-100)>0.01?'warning':'success');
   nav('kpi');
 }
