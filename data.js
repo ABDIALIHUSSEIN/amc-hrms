@@ -273,11 +273,23 @@ const PerfEngine = {
     return Math.round(weighted / totalWeight);
   },
   ratingLabel(score) {
-    if (score >= 110) return { label:'Outstanding',    cls:'excellent' };
-    if (score >= 90)  return { label:'Exceeds Target', cls:'good' };
-    if (score >= 70)  return { label:'Meets Target',   cls:'average' };
-    if (score >= 50)  return { label:'Needs Improvement', cls:'below' };
-    return               { label:'Unsatisfactory',    cls:'poor' };
+    // Spec rating scale: ≥110 Outstanding · 100–110 Exceeds · 80–100 Meets · 60–79 Needs · <60 Unsatisfactory
+    if (score >= 110) return { label:'Outstanding',            cls:'excellent' };
+    if (score >= 100) return { label:'Exceeds Expectations',  cls:'good' };
+    if (score >= 80)  return { label:'Meets Expectations',    cls:'average' };
+    if (score >= 60)  return { label:'Needs Improvement',     cls:'below' };
+    return               { label:'Unsatisfactory',           cls:'poor' };
+  },
+  // Annual leave accrual: 2.5 days/month, 30/year cap (Fridays included).
+  accruedLeave(joined) {
+    if (!joined) return 0;
+    const j = new Date(joined), now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const start = j > yearStart ? j : yearStart;
+    let months = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth());
+    if (now.getDate() < start.getDate()) months--;
+    months = Math.max(0, months);
+    return Math.min(30, Math.round(months * 2.5 * 10) / 10);
   },
   deptAvg(deptId) {
     const emps = DB.employees.filter(e => e.dept === deptId && !['Resigned','Terminated'].includes(e.status));
