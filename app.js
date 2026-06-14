@@ -255,8 +255,9 @@ function bootApp() {
   updateNavBadges();
   nav('dashboard');
   toast(`Welcome back, ${u.name.split(' ')[0]}!`, 'success');
-  // Sync WhatsApp connection status from the server (cross-device).
+  // Sync WhatsApp + SMS connection status from the server (cross-device).
   if (typeof refreshWAStatus === 'function') refreshWAStatus();
+  if (typeof refreshSmsStatus === 'function') refreshSmsStatus();
 }
 
 async function logout() {
@@ -1298,11 +1299,12 @@ function deleteProject(projId){
 // Persisted in-app notification (also fires WhatsApp click-to-send hook later).
 function notifyUser(empId, type, text){
   const e = getEmp(empId); if (!e) return;
-  const link = e.email || '';
   const n = { id:'tmp'+Date.now(), userEmail:e.email||'', empId, type, text, read:false, time:new Date().toISOString() };
   (DB.notifications=DB.notifications||[]).unshift(n);
   if (typeof SupaWrite!=='undefined') SupaWrite.saveNotification(n);
   if (typeof updateNavBadges==='function') updateNavBadges();
+  // SMS is mandatory for KPI/task assignments (sent via Tabaarak gateway if configured).
+  if (['kpi','task'].includes(type) && typeof sendSmsToEmployee==='function') sendSmsToEmployee(empId, 'AMC HRMS: ' + text);
 }
 
 function kpiTemplatesHTML() {
@@ -2539,8 +2541,45 @@ function settingsPayCfg(){return `<div class="settings-pane"><div class="setting
 </div>`;}
 function settingsNotif(){return `<div class="settings-pane"><div class="settings-pane-title">Notification Settings</div> ${[['Late Arrival SMS','Send SMS when 8+ min late'],['Leave Approval Email','Email on leave decision'],['Payroll Notification','Email when payslip ready'],['KPI Review Reminder','Monthly KPI review reminder'],['Disciplinary Alert','Alert on case status change']].map(([l,d])=>`<div class="toggle-row"><div><div class="toggle-label">${l}</div><div class="toggle-desc">${d}</div></div><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>`).join('')}
 </div>`;}
-function settingsInteg(){return `<div class="settings-pane"><div class="settings-pane-title">System Integrations</div> ${[['Biometric System','badge-green','Connected','ZKTeco — syncing every 5 min'],['SMS Gateway','badge-green','Connected','AMC-branded per subsidiary'],['Email (SMTP)','badge-green','Connected','smtp.amc.so'],['Finance ERP','badge-amber','Pending','Payroll → ERP pending'],['Active Directory','badge-gray','Disconnected','SSO optional']].map(([l,cls,st,d])=>`<div class="toggle-row"><div><div class="toggle-label" style="display:flex;align-items:center;gap:8px">${l}<span class="badge ${cls}">${st}</span></div><div class="toggle-desc">${d}</div></div><button class="btn btn-outline btn-sm">${st==='Connected'?'Configure':'Connect'}</button></div>`).join('')}
+function settingsInteg(){return `<div class="settings-pane"><div class="settings-pane-title">System Integrations</div>
+  <div class="toggle-row"><div><div class="toggle-label" style="display:flex;align-items:center;gap:8px">SMS Gateway (Tabaarak)<span class="badge ${isSmsConfigured()?'badge-green':'badge-amber'}">${isSmsConfigured()?'Connected':'Not set'}</span></div><div class="toggle-desc">Send KPI/task assignment SMS via tabaarakict.so</div></div><button class="btn btn-primary btn-sm" onclick="openSMSSetup()">${isSmsConfigured()?'Reconfigure':'Set up'}</button></div>
+  ${[['Biometric System','badge-gray','Optional','ZKTeco integration'],['Email (SMTP)','badge-gray','Optional','Transactional email provider'],['Active Directory','badge-gray','Optional','SSO']].map(([l,cls,st,d])=>`<div class="toggle-row"><div><div class="toggle-label" style="display:flex;align-items:center;gap:8px">${l}<span class="badge ${cls}">${st}</span></div><div class="toggle-desc">${d}</div></div></div>`).join('')}
 </div>`;}
+
+/* ═══════════ SMS (Tabaarak gateway) ═══════════ */
+function isSmsConfigured(){ try { return JSON.parse(localStorage.getItem('amc_sms_status')||'{}').configured===true; } catch { return false; } }
+async function refreshSmsStatus(){ try { if(!SUPA||!SUPA.fn||!SUPA.authToken) return; const s=await SUPA.fn('sms',{action:'status'}); localStorage.setItem('amc_sms_status',JSON.stringify({configured:!!s.configured})); } catch(e){} }
+function openSMSSetup(){
+  openModal('narrow', `<div class="modal-header"><span class="modal-title">SMS Setup — Tabaarak</span>${closeX()}</div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Enter your Tabaarak SMS gateway login. Stored securely on the server, never in the browser.</div>
+      <div class="form-group" style="margin-bottom:10px"><label class="form-label required">Gateway Username</label><input class="form-control" id="sms_user"></div>
+      <div class="form-group" style="margin-bottom:14px"><label class="form-label required">Gateway Password</label><input class="form-control" id="sms_pass" type="password"></div>
+      <div style="background:var(--gray-50);border-radius:var(--radius);padding:12px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">Test</div>
+        <div class="form-row cols-2" style="margin-bottom:0"><div class="form-group" style="margin-bottom:0"><input class="form-control form-control-sm" id="sms_testnum" placeholder="61xxxxxxx"></div><button class="btn btn-outline btn-sm" onclick="smsTest()" style="align-self:flex-end">Send Test</button></div>
+        <div id="sms_test_result" style="font-size:12px;margin-top:8px;font-weight:600;display:none"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="smsSaveConfig()">Save & Connect</button></div>`);
+}
+async function smsSaveConfig(){
+  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim();
+  if(!user||!pass){ toast('Username and password required','error'); return; }
+  try { await SUPA.fn('sms',{action:'save_config',user,pass}); localStorage.setItem('amc_sms_status',JSON.stringify({configured:true})); closeModal(); toast('SMS gateway connected','success'); nav('settings'); }
+  catch(e){ toast(e.message||'Could not save','error'); }
+}
+async function smsTest(){
+  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim();
+  const to=document.getElementById('sms_testnum').value.trim(), r=document.getElementById('sms_test_result');
+  if(!user||!pass||!to){ toast('Fill username, password, test number','error'); return; }
+  if(r){ r.style.display='block'; r.style.color='var(--gray-500)'; r.textContent='Sending…'; }
+  try { await SUPA.fn('sms',{action:'send',to,user,pass,message:'AMC HRMS test SMS. Gateway working.'}); if(r){ r.style.color='#075E54'; r.textContent='✓ Sent. Check the phone.'; } }
+  catch(e){ if(r){ r.style.color='var(--red)'; r.textContent='✕ '+(e.message||'Failed'); } }
+}
+async function sendSmsToEmployee(empId, message){
+  const e=getEmp(empId); if(!e||!e.phone||!isSmsConfigured()) return;
+  try { await SUPA.fn('sms',{action:'send', to:e.phone, message}); } catch(err){ /* silent */ }
+}
 function settingsSec(){return `<div class="settings-pane"><div class="settings-pane-title">Security & Compliance</div> ${[['Two-Factor Authentication (2FA)','Required for admin roles'],['Session Timeout (8hrs)','Auto-logout on expiry'],['Audit All Changes','Track every change with user + timestamp'],['Data Encryption at Rest','AES-256 for employee data']].map(([l,d])=>`<div class="toggle-row"><div><div class="toggle-label">${l}</div><div class="toggle-desc">${d}</div></div><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>`).join('')}
   <div style="margin-top:14px;padding:12px 14px;background:var(--green-l);border-radius:var(--radius);font-size:12px;color:var(--green);font-weight:600"> All security controls active · Session persistence enabled · Audit logs running</div>
   <button class="btn btn-outline btn-sm" onclick="openSystemHealth()" style="margin-top:12px">${ICO.activity || ''} View System Error Log</button>
