@@ -39,34 +39,41 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(()=>({}));
     const action = String(body.action || "status");
 
+    const DEFAULT_URL = "https://tabaarakict.so/SendSMS.aspx";
     if (action === "save_config") {
       const u = String(body.user||"").trim(), p = String(body.pass||"").trim();
+      const gw = String(body.url||"").trim() || DEFAULT_URL;
       if (!u || !p) return json({ error:"Gateway username and password are required" }, 400);
-      const { error } = await admin.from("integration_config").upsert({ key:"sms", value:{ user:u, pass:p }, updated_at:new Date().toISOString() });
+      const { error } = await admin.from("integration_config").upsert({ key:"sms", value:{ user:u, pass:p, url:gw }, updated_at:new Date().toISOString() });
       if (error) return json({ error:error.message }, 500);
       return json({ ok:true, configured:true });
     }
     if (action === "status") {
       const { data } = await admin.from("integration_config").select("value").eq("key","sms").maybeSingle();
       const v = (data?.value||{}) as Record<string,string>;
-      return json({ configured: !!(v.user && v.pass) });
+      return json({ configured: !!(v.user && v.pass), url: v.url||"" });
     }
     if (action === "send" || action === "test") {
       const rec = localNum(String(body.to||""));
       const msg = String(body.message||"").trim();
       if (!rec || !msg) return json({ error:"Recipient number and message are required" }, 400);
-      let u = String(body.user||"").trim(), p = String(body.pass||"").trim();
-      if (!u || !p) {
+      let u = String(body.user||"").trim(), p = String(body.pass||"").trim(), gw = String(body.url||"").trim();
+      if (!u || !p || !gw) {
         const { data } = await admin.from("integration_config").select("value").eq("key","sms").maybeSingle();
-        const v = (data?.value||{}) as Record<string,string>; u = v.user||""; p = v.pass||"";
+        const v = (data?.value||{}) as Record<string,string>; u = u||v.user||""; p = p||v.pass||""; gw = gw||v.url||"";
       }
       if (!u || !p) return json({ error:"SMS is not configured yet" }, 400);
-      const q = `https://tabaarakict.so/SendSMS.aspx?user=${encodeURIComponent(u)}&pass=${encodeURIComponent(p)}&cont=${encodeURIComponent(msg)}&rec=${encodeURIComponent(rec)}&waitMsgId=1`;
-      const res = await fetch(q);
+      gw = gw || DEFAULT_URL;
+      const sep = gw.includes("?") ? "&" : "?";
+      const q = `${gw}${sep}user=${encodeURIComponent(u)}&pass=${encodeURIComponent(p)}&cont=${encodeURIComponent(msg)}&rec=${encodeURIComponent(rec)}&waitMsgId=1`;
+      const res = await fetch(q, { redirect: "manual" });
+      if (res.status >= 300 && res.status < 400) return json({ error: `Gateway URL redirected (${res.status}) — endpoint is wrong/moved. Get the current SMS API URL from Tabaarak and paste it in the Gateway URL field.` }, 400);
       const txt = await res.text();
+      // Endpoint returns a web page instead of the SMS API response → wrong URL.
+      if (/<!doctype html|<html/i.test(txt)) return json({ error: "Gateway returned a web page, not the SMS API — the Gateway URL is wrong. Get the current SMS API endpoint from Tabaarak." }, 400);
       let ok = false, info: any = txt;
       try { const j = JSON.parse(txt); info = j; ok = !!(j?.Result?.AcceptedForDelivery); } catch { ok = res.ok && /success/i.test(txt); }
-      if (!ok) return json({ error: (typeof info==="object" ? (info?.Result?.Message||JSON.stringify(info)) : String(info)) || "SMS gateway rejected", raw: info }, 400);
+      if (!ok) return json({ error: (typeof info==="object" ? (info?.Result?.Message||JSON.stringify(info)) : String(info).slice(0,200)) || "SMS gateway rejected", raw: info }, 400);
       return json({ ok:true, to:rec, result:info });
     }
     return json({ error:"Unknown action" }, 400);

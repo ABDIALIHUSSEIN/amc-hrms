@@ -2553,6 +2553,7 @@ function openSMSSetup(){
   openModal('narrow', `<div class="modal-header"><span class="modal-title">SMS Setup — Tabaarak</span>${closeX()}</div>
     <div class="modal-body">
       <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Enter your Tabaarak SMS gateway login. Stored securely on the server, never in the browser.</div>
+      <div class="form-group" style="margin-bottom:10px"><label class="form-label required">Gateway URL (SMS API endpoint)</label><input class="form-control" id="sms_url" placeholder="https://…/SendSMS.aspx"><div style="font-size:11px;color:var(--amber);margin-top:3px">The 2015 URL is dead — get the current endpoint from Tabaarak.</div></div>
       <div class="form-group" style="margin-bottom:10px"><label class="form-label required">Gateway Username</label><input class="form-control" id="sms_user"></div>
       <div class="form-group" style="margin-bottom:14px"><label class="form-label required">Gateway Password</label><input class="form-control" id="sms_pass" type="password"></div>
       <div style="background:var(--gray-50);border-radius:var(--radius);padding:12px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">Test</div>
@@ -2563,17 +2564,17 @@ function openSMSSetup(){
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="smsSaveConfig()">Save & Connect</button></div>`);
 }
 async function smsSaveConfig(){
-  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim();
+  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim(), url=document.getElementById('sms_url').value.trim();
   if(!user||!pass){ toast('Username and password required','error'); return; }
-  try { await SUPA.fn('sms',{action:'save_config',user,pass}); localStorage.setItem('amc_sms_status',JSON.stringify({configured:true})); closeModal(); toast('SMS gateway connected','success'); nav('settings'); }
+  try { await SUPA.fn('sms',{action:'save_config',user,pass,url}); localStorage.setItem('amc_sms_status',JSON.stringify({configured:true})); closeModal(); toast('SMS gateway saved','success'); nav('settings'); }
   catch(e){ toast(e.message||'Could not save','error'); }
 }
 async function smsTest(){
-  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim();
+  const user=document.getElementById('sms_user').value.trim(), pass=document.getElementById('sms_pass').value.trim(), url=document.getElementById('sms_url').value.trim();
   const to=document.getElementById('sms_testnum').value.trim(), r=document.getElementById('sms_test_result');
-  if(!user||!pass||!to){ toast('Fill username, password, test number','error'); return; }
+  if(!user||!pass||!to){ toast('Fill URL, username, password, test number','error'); return; }
   if(r){ r.style.display='block'; r.style.color='var(--gray-500)'; r.textContent='Sending…'; }
-  try { await SUPA.fn('sms',{action:'send',to,user,pass,message:'AMC HRMS test SMS. Gateway working.'}); if(r){ r.style.color='#075E54'; r.textContent='✓ Sent. Check the phone.'; } }
+  try { await SUPA.fn('sms',{action:'send',to,user,pass,url,message:'AMC HRMS test SMS. Gateway working.'}); if(r){ r.style.color='#075E54'; r.textContent='✓ Sent. Check the phone.'; } }
   catch(e){ if(r){ r.style.color='var(--red)'; r.textContent='✕ '+(e.message||'Failed'); } }
 }
 async function sendSmsToEmployee(empId, message){
