@@ -1029,8 +1029,163 @@ PAGES.kpi = function(wrap) {
 
 function kpiTab(tab, el) {
   document.querySelectorAll('#kpiTabs .tab').forEach(t=>t.classList.remove('active')); el.classList.add('active');
-  const fns = { templates: kpiTemplatesHTML, assignments: kpiAssignmentsHTML, scores: kpiScoresHTML };
+  const fns = { templates: kpiTemplatesHTML, assignments: kpiAssignmentsHTML, scores: kpiScoresHTML, tasks: kpiTasksHTML };
   document.getElementById('kpiBody').innerHTML = (fns[tab]||kpiTemplatesHTML)();
+}
+
+/* ═══════════ TASKS (linked to KPIs) ═══════════ */
+function newTaskId(){ return 'TSK_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function taskActor(){ return (STATE.user && (STATE.user.email||STATE.user.name)) || ''; }
+
+// KPI auto-progress: actual = number of completed linked tasks (achievement = completed/target).
+function recomputeKpiFromTasks(kpiId){
+  if (!kpiId) return;
+  const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
+  const linked = (DB.tasks||[]).filter(t=>t.kpiId===kpiId);
+  if (!linked.length) return;
+  const done = linked.filter(t=>t.status==='Completed').length;
+  k.actual = done; k.updatedBy = taskActor();
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k);
+}
+
+function kpiTasksHTML(){
+  const tasks = (DB.tasks||[]).filter(t=>{ if (STATE.subsidiary==='all') return true; const e=getEmp(t.empId); return e&&e.sub===STATE.subsidiary; });
+  const stBadge = { 'To Do':'badge-gray', 'In Progress':'badge-amber', 'Completed':'badge-green' };
+  const today = new Date().toISOString().split('T')[0];
+  const counts = { todo:tasks.filter(t=>t.status==='To Do').length, prog:tasks.filter(t=>t.status==='In Progress').length, done:tasks.filter(t=>t.status==='Completed').length, over:tasks.filter(t=>t.status!=='Completed'&&t.dueDate&&t.dueDate<today).length };
+  return `<div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card gray"><div class="stat-info"><div class="stat-label">To Do</div><div class="stat-val">${counts.todo}</div></div></div>
+    <div class="stat-card amber"><div class="stat-info"><div class="stat-label">In Progress</div><div class="stat-val">${counts.prog}</div></div></div>
+    <div class="stat-card green"><div class="stat-info"><div class="stat-label">Completed</div><div class="stat-val">${counts.done}</div></div></div>
+    <div class="stat-card red"><div class="stat-info"><div class="stat-label">Overdue</div><div class="stat-val">${counts.over}</div></div></div></div>
+    <div class="card"><div class="card-header"><div class="card-title">Tasks</div><button class="btn btn-primary btn-sm" onclick="openTaskModal()">${ICO.plus} New Task</button></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Employee</th><th>Linked KPI</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${tasks.length ? tasks.map(t=>{ const e=getEmp(t.empId); const k=DB.kpis.find(x=>x.id===t.kpiId); const over=t.status!=='Completed'&&t.dueDate&&t.dueDate<today;
+      return `<tr> <td><div style="font-weight:600;font-size:12px">${esc(t.title)}</div>${t.description?`<div style="font-size:11px;color:var(--gray-400)">${esc(t.description)}</div>`:''}</td>
+      <td style="font-size:12px">${e?esc(e.name):esc(t.empId||'—')}</td>
+      <td style="font-size:11px">${k?esc(k.title):'<span style="color:var(--gray-300)">—</span>'}</td>
+      <td style="font-size:11px;${over?'color:var(--red);font-weight:700':''}">${t.dueDate||'—'}${over?' ⚠':''}</td>
+      <td><select class="form-control" style="width:135px;font-size:12px" onchange="setTaskStatus('${t.id}',this.value)"><option ${t.status==='To Do'?'selected':''}>To Do</option><option ${t.status==='In Progress'?'selected':''}>In Progress</option><option ${t.status==='Completed'?'selected':''}>Completed</option></select></td>
+      <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openTaskDetail('${t.id}')" title="Detail">${ICO.eye}</button><button class="btn btn-ghost btn-xs" onclick="openTaskModal('${t.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteTask('${t.id}')" title="Delete">${ICO.trash}</button></div></td> </tr>`;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">No tasks yet</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+function openTaskModal(taskId){
+  const t = taskId ? (DB.tasks||[]).find(x=>x.id===taskId) : null;
+  openModal('wide', `<div class="modal-header"><span class="modal-title">${t?'Edit':'New'} Task</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Task Title</label><input class="form-control" id="tk_title" value="${t?esc(t.title):''}" placeholder="e.g. Screen 10 CVs"></div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label">Description</label><input class="form-control" id="tk_desc" value="${t?esc(t.description):''}"></div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label required">Assign to Employee</label><select class="form-control" id="tk_emp">${filteredEmps().map(e=>`<option value="${e.id}" ${t&&t.empId===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label">Linked KPI</label><select class="form-control" id="tk_kpi"><option value="">— none —</option>${(DB.kpis||[]).map(k=>{const e=getEmp(k.empId);return `<option value="${k.id}" ${t&&t.kpiId===k.id?'selected':''}>${esc(k.title)}${e?' · '+e.name:''}</option>`;}).join('')}</select></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Due Date</label><input class="form-control" id="tk_due" type="date" value="${t?t.dueDate:''}"></div>
+        <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="tk_status"><option ${!t||t.status==='To Do'?'selected':''}>To Do</option><option ${t&&t.status==='In Progress'?'selected':''}>In Progress</option><option ${t&&t.status==='Completed'?'selected':''}>Completed</option></select></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveTaskForm('${taskId||''}')">Save Task</button></div>`);
+}
+
+function saveTaskForm(taskId){
+  const title = sanitizeText(document.getElementById('tk_title').value);
+  if (!title) { toast('Task title required','error'); return; }
+  const empId = document.getElementById('tk_emp').value;
+  const kpiId = document.getElementById('tk_kpi').value;
+  const dueDate = document.getElementById('tk_due').value||'';
+  const status = document.getElementById('tk_status').value;
+  let t = taskId ? (DB.tasks||[]).find(x=>x.id===taskId) : null;
+  const isNew = !t;
+  if (isNew) { t = { id:newTaskId(), createdBy:taskActor(), actualResult:'', comments:'', evidenceUrl:'', completionDate:'' }; (DB.tasks=DB.tasks||[]).unshift(t); }
+  Object.assign(t, { title, description:sanitizeText(document.getElementById('tk_desc').value), empId, kpiId, dueDate, status, updatedBy:taskActor() });
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(t);
+  recomputeKpiFromTasks(kpiId);
+  if (isNew && empId) notifyUser(empId, 'task', `New task assigned: ${title}`);
+  scheduleSave();
+  closeModal(); toast(isNew?'Task created':'Task updated','success'); kpiTab('tasks', document.querySelector('#kpiTabs .tab:nth-child(4)'));
+}
+
+function setTaskStatus(taskId, status){
+  const t = (DB.tasks||[]).find(x=>x.id===taskId); if (!t) return;
+  if (status==='Completed') { openTaskComplete(taskId); return; }  // require completion details
+  t.status = status; t.updatedBy = taskActor();
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(t);
+  recomputeKpiFromTasks(t.kpiId);
+  scheduleSave();
+  toast(`Task: ${status}`,'info');
+}
+
+// Completing a task REQUIRES actual result + comments + completion date.
+function openTaskComplete(taskId){
+  const t = (DB.tasks||[]).find(x=>x.id===taskId); if (!t) return;
+  openModal('narrow', `<div class="modal-header"><span class="modal-title">Complete Task — ${esc(t.title)}</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Actual Result / Achievement</label><input class="form-control" id="tc_actual" placeholder="What was achieved"></div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Supporting Comments</label><textarea class="form-control" id="tc_comments" rows="3"></textarea></div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label required">Completion Date</label><input class="form-control" id="tc_date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="form-group"><label class="form-label">Evidence (URL, optional)</label><input class="form-control" id="tc_evidence" placeholder="https://…"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitTaskComplete('${taskId}')">Mark Completed</button></div>`);
+}
+
+function submitTaskComplete(taskId){
+  const t = (DB.tasks||[]).find(x=>x.id===taskId); if (!t) return;
+  const actual = sanitizeText(document.getElementById('tc_actual').value);
+  const comments = sanitizeText(document.getElementById('tc_comments').value);
+  const date = document.getElementById('tc_date').value;
+  if (!actual || !comments || !date) { toast('Actual result, comments and completion date are required','error'); return; }
+  Object.assign(t, { status:'Completed', actualResult:actual, comments, completionDate:date, evidenceUrl:sanitizeText(document.getElementById('tc_evidence').value), updatedBy:taskActor() });
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(t);
+  recomputeKpiFromTasks(t.kpiId);
+  if (t.kpiId) { const k=DB.kpis.find(x=>x.id===t.kpiId); if (k) notifyUser(k.empId, 'kpi', `Task completed for KPI: ${k.title}`); }
+  scheduleSave();
+  closeModal(); toast('Task completed','success');
+  if (document.getElementById('kpiTabs')) kpiTab('tasks', document.querySelector('#kpiTabs .tab:nth-child(4)')); else nav('kpi');
+}
+
+function openTaskDetail(taskId){
+  const t = (DB.tasks||[]).find(x=>x.id===taskId); if (!t) return;
+  const e=getEmp(t.empId); const k=DB.kpis.find(x=>x.id===t.kpiId);
+  openModal('narrow', `<div class="modal-header"><span class="modal-title">Task — ${esc(t.title)}</span>${closeX()}</div>
+    <div class="modal-body" style="font-size:13px">
+      ${[['Employee',e?e.name:t.empId],['Linked KPI',k?k.title:'—'],['Status',t.status],['Due',t.dueDate||'—'],['Completed',t.completionDate||'—'],['Actual Result',t.actualResult||'—'],['Comments',t.comments||'—'],['Evidence',t.evidenceUrl?`<a href="${esc(t.evidenceUrl)}" target="_blank" rel="noopener">link</a>`:'—'],['Created by',t.createdBy||'—']].map(([a,b])=>`<div class="info-row"><span class="info-key">${a}</span><span class="info-val">${b}</span></div>`).join('')}
+    </div><div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+}
+
+function deleteTask(taskId){
+  if (!confirm('Delete this task?')) return;
+  const t = (DB.tasks||[]).find(x=>x.id===taskId); const kpiId = t?t.kpiId:'';
+  DB.tasks = (DB.tasks||[]).filter(x=>x.id!==taskId);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteTask(taskId);  // soft delete in DB
+  recomputeKpiFromTasks(kpiId);
+  scheduleSave();
+  toast('Task deleted','info');
+  if (document.getElementById('kpiTabs')) kpiTab('tasks', document.querySelector('#kpiTabs .tab:nth-child(4)'));
+}
+
+// Employee's own task list (single dashboard with their KPIs). They can advance status.
+function selfMyTasksHTML(empId){
+  const tasks = (DB.tasks||[]).filter(t=>t.empId===empId);
+  const today = new Date().toISOString().split('T')[0];
+  return `<div class="card" style="margin-top:20px"><div class="card-header"><span class="card-title">My Tasks (${tasks.length})</span></div>
+    <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Linked KPI</th><th>Due</th><th>Status</th></tr></thead>
+    <tbody>${tasks.length ? tasks.map(t=>{ const k=DB.kpis.find(x=>x.id===t.kpiId); const over=t.status!=='Completed'&&t.dueDate&&t.dueDate<today;
+      return `<tr> <td style="font-weight:600;font-size:12px">${esc(t.title)}</td> <td style="font-size:11px">${k?esc(k.title):'—'}</td> <td style="font-size:11px;${over?'color:var(--red);font-weight:700':''}">${t.dueDate||'—'}${over?' ⚠':''}</td>
+      <td><select class="form-control" style="width:135px;font-size:12px" onchange="setTaskStatus('${t.id}',this.value)"><option ${t.status==='To Do'?'selected':''}>To Do</option><option ${t.status==='In Progress'?'selected':''}>In Progress</option><option ${t.status==='Completed'?'selected':''}>Completed</option></select></td> </tr>`;
+    }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:20px">No tasks assigned</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+// Persisted in-app notification (also fires WhatsApp click-to-send hook later).
+function notifyUser(empId, type, text){
+  const e = getEmp(empId); if (!e) return;
+  const link = e.email || '';
+  const n = { id:'tmp'+Date.now(), userEmail:e.email||'', empId, type, text, read:false, time:new Date().toISOString() };
+  (DB.notifications=DB.notifications||[]).unshift(n);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveNotification(n);
+  if (typeof updateNavBadges==='function') updateNavBadges();
 }
 
 function kpiTemplatesHTML() {
@@ -2959,7 +3114,7 @@ const SELF_PAGES = {
             const cmts = (DB.kpiComments||[]).filter(c=>c.kpiId===k.id).length;
             const statusCell = k.scoringMode==='binary' ? `<span class="badge ${k.status==='Completed'?'badge-green':'badge-gray'}">${k.status||'Not Completed'}</span>` : `<span style="font-family:var(--mono)">${k.actual}/${k.target} ${k.unit||''}</span>`;
             return `<tr> <td><div style="font-weight:700">${k.title}</div><div style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</div></td> <td>${statusCell}</td> <td><span class="kpi-score ${ach>=100?'excellent':ach>=70?'good':ach>=50?'average':'poor'}">${ach}%</span></td> <td>${k.weight}%</td> <td><span class="badge ${apB}" style="font-size:10px">${k.approvalStatus||'Pending'}</span></td> <td><button class="btn btn-ghost btn-xs" onclick="openKPIDetail('${k.id}')" title="Reviews / Comments${cmts?` (${cmts})`:''}">${ICO.eye}${cmts?` ${cmts}`:''}</button></td> </tr>`;
-          }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">No KPIs assigned. Contact your manager.</td></tr>'}</tbody> </table></div> </div> </div>`;
+          }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">No KPIs assigned. Contact your manager.</td></tr>'}</tbody> </table></div> </div> ${selfMyTasksHTML(emp.id)} </div>`;
   },
 
 };
