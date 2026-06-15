@@ -195,11 +195,11 @@ const PayrollEngine = {
 
   /* ── YEARLY Bonus calculation (performance-based) ── */
   BONUS_RATINGS: {
-    'Outstanding':           0.20,
-    'Exceeds Expectations':  0.15,
-    'Meets Expectations':    0.10,
-    'Needs Improvement':     0.05,
-    'Unsatisfactory':        0.00,
+    'Outstanding':                0.20,
+    'Exceeds Expectations':       0.15,
+    'Fully Meets Expectations':   0.10,
+    'Needs Improvement':          0.05,
+    'Unsatisfactory':             0.00,
   },
   calcYearlyBonus(emp, performanceRating) {
     const annualSalary = (emp.salary || 0) * 12;
@@ -212,10 +212,10 @@ const PayrollEngine = {
     if (bonusRule.type === 'fixed')      return bonusRule.value;
     if (bonusRule.type === 'performance') {
       const score = typeof PerfEngine !== 'undefined' ? PerfEngine.calcEmployeeScore(emp.id) : 0;
-      const rating = score >= 110 ? 'Outstanding'
-        : score >= 90  ? 'Exceeds Expectations'
-        : score >= 70  ? 'Meets Expectations'
-        : score >= 50  ? 'Needs Improvement'
+      const rating = score > 110  ? 'Outstanding'
+        : score >= 100 ? 'Exceeds Expectations'
+        : score >= 80  ? 'Fully Meets Expectations'
+        : score >= 60  ? 'Needs Improvement'
         : 'Unsatisfactory';
       return this.calcYearlyBonus(emp, rating);
     }
@@ -285,12 +285,11 @@ const PerfEngine = {
     return Math.round(weighted / totalWeight);
   },
   ratingLabel(score) {
-    // Spec rating scale: ≥110 Outstanding · 100–110 Exceeds · 80–100 Meets · 60–79 Needs · <60 Unsatisfactory
-    if (score >= 110) return { label:'Outstanding',            cls:'excellent' };
-    if (score >= 100) return { label:'Exceeds Expectations',  cls:'good' };
-    if (score >= 80)  return { label:'Meets Expectations',    cls:'average' };
-    if (score >= 60)  return { label:'Needs Improvement',     cls:'below' };
-    return               { label:'Unsatisfactory',           cls:'poor' };
+    if (score > 110)  return { label:'Outstanding',                cls:'excellent' };
+    if (score >= 100) return { label:'Exceeds Expectations',       cls:'good' };
+    if (score >= 80)  return { label:'Fully Meets Expectations',   cls:'average' };
+    if (score >= 60)  return { label:'Needs Improvement',          cls:'below' };
+    return               { label:'Unsatisfactory',              cls:'poor' };
   },
   // Annual leave accrual: 2.5 days/month, 30/year cap (Fridays included).
   accruedLeave(joined) {

@@ -1488,6 +1488,15 @@ function createNewKPITemplate() {
   closeModal(); toast('KPI template created','success'); nav('kpi');
 }
 
+function kpiPeriodOptions(selected) {
+  const yr = new Date().getFullYear();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    .map((m,i) => `${m}-${yr}`);
+  const quarters = [`Q1-${yr}`,`Q2-${yr}`,`Q3-${yr}`,`Q4-${yr}`];
+  const all = [...months, ...quarters, `Annual-${yr}`, `Annual-${yr+1}`];
+  return all.map(v => `<option value="${v}" ${selected===v?'selected':''}>${v}</option>`).join('');
+}
+
 function filterEmpSelect(srchId, selectId) {
   const q = document.getElementById(srchId)?.value?.toLowerCase() || '';
   const sel = document.getElementById(selectId);
@@ -1502,7 +1511,7 @@ function filterEmpSelect(srchId, selectId) {
 function assignKPITemplate(tmplId) {
   const tmpl = DB.kpiTemplates.find(t=>t.id===tmplId); if (!tmpl) return;
   openModal('wide', `
-    <div class="modal-header"><span class="modal-title">Assign KPI Template — ${tmpl.name}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <input class="form-control" placeholder="Search employee…" style="margin-bottom:6px" oninput="filterEmpSelect('ka_srch','ka_emp')" id="ka_srch"> <select class="form-control" id="ka_emp" size="5" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label required">Period</label> <select class="form-control" id="ka_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option><option>Annual-2026</option></select> </div> </div> <div style="margin-top:12px;padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px"> <strong>KPIs to assign:</strong><br> ${tmpl.kpis.map(k=>`<span style="display:inline-block;margin:3px 4px 0 0"><span class="badge badge-navy">${k.title}</span> <span style="font-size:10px;color:var(--gray-500)">${k.weight}%</span></span>`).join('')}
+    <div class="modal-header"><span class="modal-title">Assign KPI Template — ${tmpl.name}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <input class="form-control" placeholder="Search employee…" style="margin-bottom:6px" oninput="filterEmpSelect('ka_srch','ka_emp')" id="ka_srch"> <select class="form-control" id="ka_emp" size="5" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label required">Period</label> <select class="form-control" id="ka_period">${kpiPeriodOptions('Q2-2026')}</select> </div> </div> <div style="margin-top:12px;padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px"> <strong>KPIs to assign:</strong><br> ${tmpl.kpis.map(k=>`<span style="display:inline-block;margin:3px 4px 0 0"><span class="badge badge-navy">${k.title}</span> <span style="font-size:10px;color:var(--gray-500)">${k.weight}%</span></span>`).join('')}
       </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="doAssignKPIs('${tmplId}')">Assign KPIs</button> </div>`);
 }
 
@@ -1611,11 +1620,14 @@ function openEditKPIModal(kpiId){
       <div class="form-row cols-3">
         <div class="form-group"><label class="form-label">Weight (%)</label><input class="form-control" id="ek_weight" type="number" value="${k.weight||0}"></div>
         <div class="form-group"><label class="form-label">Period Type</label><select class="form-control" id="ek_ptype"><option ${k.periodType==='Monthly'?'selected':''}>Monthly</option><option ${k.periodType==='Quarterly'||!k.periodType?'selected':''}>Quarterly</option><option ${k.periodType==='Yearly'?'selected':''}>Yearly</option></select></div>
-        <div class="form-group"><label class="form-label">Period Label</label><input class="form-control" id="ek_period" value="${esc(k.period||'')}"></div>
+        <div class="form-group"><label class="form-label">Period Label</label><select class="form-control" id="ek_period">${kpiPeriodOptions(k.period||'')}</select></div>
       </div>
-      <div class="form-row cols-3">
+      <div class="form-row cols-2">
         <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="ek_start" type="date" value="${k.startDate||''}"></div>
         <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="ek_end" type="date" value="${k.endDate||''}"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Link to Project</label><select class="form-control" id="ek_project"><option value="">— none —</option>${(DB.projects||[]).map(p=>`<option value="${p.id}" ${k.projectId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label">Remarks</label><input class="form-control" id="ek_remarks" value="${esc(k.remarks||'')}"></div>
       </div>
       <div class="form-group"><label class="form-label">Reason for change (audit trail)</label><input class="form-control" id="ek_reason" placeholder="Why is this KPI being changed?"></div>
@@ -1635,6 +1647,7 @@ function saveEditKPI(kpiId){
   k.startDate = document.getElementById('ek_start').value||'';
   k.endDate = document.getElementById('ek_end').value||'';
   k.remarks = sanitizeText(document.getElementById('ek_remarks').value);
+  k.projectId = document.getElementById('ek_project')?.value || k.projectId || '';
   if (bin) {
     k.status = document.getElementById('ek_status').value;
     k.score = (k.status==='Completed')?100:0; k.actual = (k.status==='Completed')?1:0;
@@ -1667,6 +1680,7 @@ function openKPIDetail(kpiId){
         <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Employee</div><div style="font-weight:700">${e?esc(e.name):esc(k.empId)}</div></div>
         <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Mode / Score</div><div style="font-weight:700">${k.scoringMode==='binary'?'Binary':'Weighted'} · ${Math.round(ach)}%</div></div>
         <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Period</div><div style="font-weight:700">${esc(k.periodType||'')} ${esc(k.period||'')}</div></div>
+        ${k.projectId ? `<div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Linked Project</div><div style="font-weight:700;color:var(--blue)">${esc((DB.projects||[]).find(p=>p.id===k.projectId)?.name||k.projectId)}</div></div>` : ''}
         <div><div style="color:var(--gray-500);font-size:10px;text-transform:uppercase">Approval</div><div><span class="badge ${stBadge}">${esc(k.approvalStatus||'Pending')}</span>${k.approvedBy?` <span style="color:var(--gray-400)">by ${esc(k.approvedBy)}</span>`:''}</div></div>
       </div>
       ${canApprove ? `<div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${
@@ -1680,7 +1694,7 @@ function openKPIDetail(kpiId){
       <div class="section-divider"><span>Reviews (${reviews.length})</span></div>
       <div style="max-height:160px;overflow:auto;margin-bottom:8px">${reviews.length ? reviews.map(r=>`<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:12px"><div style="font-weight:600">${esc(r.rating||'')} ${r.score!=null?`· ${r.score}`:''} <span style="color:var(--gray-400);font-weight:400">— ${esc(r.reviewer||'')} · ${esc(String(r.createdAt||'').replace('T',' ').slice(0,16))}</span></div>${r.notes?`<div style="color:var(--gray-600)">${esc(r.notes)}</div>`:''}</div>`).join('') : '<div style="color:var(--gray-400);font-size:12px;padding:6px">No reviews yet.</div>'}</div>
       <div class="form-row cols-3" style="margin-bottom:6px">
-        <div class="form-group" style="margin:0"><select class="form-control form-control-sm" id="rv_rating"><option>Outstanding</option><option>Exceeds Expectations</option><option selected>Meets Expectations</option><option>Needs Improvement</option><option>Unsatisfactory</option></select></div>
+        <div class="form-group" style="margin:0"><select class="form-control form-control-sm" id="rv_rating"><option>Outstanding</option><option>Exceeds Expectations</option><option selected>Fully Meets Expectations</option><option>Needs Improvement</option><option>Unsatisfactory</option></select></div>
         <div class="form-group" style="margin:0"><input class="form-control form-control-sm" id="rv_score" type="number" placeholder="Score (0-100)"></div>
         <div class="form-group" style="margin:0"><input class="form-control form-control-sm" id="rv_notes" placeholder="Review notes"></div>
       </div>
@@ -1753,7 +1767,7 @@ function openInlineKPIModal() {
       <div class="form-row cols-3" style="margin-top:6px">
         <div class="form-group"><label class="form-label required">Weight (%)</label><input class="form-control" id="ik_weight" type="number" value="25" min="0" max="100"></div>
         <div class="form-group"><label class="form-label required">Period Type</label><select class="form-control" id="ik_ptype"><option>Monthly</option><option selected>Quarterly</option><option>Yearly</option></select></div>
-        <div class="form-group"><label class="form-label">Period Label</label><select class="form-control" id="ik_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option><option>Annual-2026</option></select></div>
+        <div class="form-group"><label class="form-label">Period Label</label><select class="form-control" id="ik_period">${kpiPeriodOptions('Q2-2026')}</select></div>
       </div>
       <div class="form-row cols-3">
         <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" id="ik_start" type="date"></div>
@@ -1817,7 +1831,7 @@ function kpiScoresHTML() {
       ${DB.subsidiaries.map(s=>`<option value="${s.id}" ${subFilter===s.id?'selected':''}>${s.name}</option>`).join('')}
     </select>
   </div>
-  <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Outstanding ≥110%</div><div class="stat-val">${outs}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Exceeds ≥100%</div><div class="stat-val">${exc}</div></div></div> <div class="stat-card teal"><div class="stat-info"><div class="stat-label">Meets ≥80%</div><div class="stat-val">${meets}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Needs Impr. ≥60%</div><div class="stat-val">${needs}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Unsatisfactory</div><div class="stat-val">${unsat}</div></div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>#</th><th>Employee</th><th>Subsidiary</th><th>Department</th><th>KPIs</th><th>Score</th><th>Rating</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${scored.map((e,i)=>{const rt=PerfEngine.ratingLabel(e.sc);const kpiCount=DB.kpis.filter(k=>k.empId===e.id).length;const totalW=DB.kpis.filter(k=>k.empId===e.id).reduce((s,k)=>s+k.weight,0);return `<tr> <td style="font-family:var(--mono);color:var(--gray-400)">${i+1}</td> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(e.name)}</div><div><div class="emp-name">${e.name}</div><div class="emp-id">${e.id}</div></div></div></td> <td style="font-size:12px">${getSubName(e.sub)}</td> <td style="font-size:12px">${getDeptName(e.dept)}</td> <td style="font-family:var(--mono)">${kpiCount} ${totalW>100.01&&kpiCount?`<span class="badge badge-red" style="font-size:9px" title="KPI weights over-allocated: ${totalW}% (should be ≤100%)">⚠</span>`:''}</td> <td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:80px"><div class="progress-bar ${e.sc>=100?'green':e.sc>=80?'amber':'red'}" style="width:${Math.min(e.sc,120)/1.2}%"></div></div><span class="kpi-score ${rt.cls}" style="font-size:14px">${e.sc}%</span></div></td> <td><span class="badge ${e.sc>=100?'badge-green':e.sc>=80?'badge-teal':e.sc>=60?'badge-amber':'badge-red'}">${rt.label}</span></td> <td style="font-size:11px;color:var(--gray-400)">Q2 2026</td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" onclick="openMasterProfileModal('${e.id}')">${ICO.eye}</button>${e.sc<60?`<button class="btn btn-danger btn-xs" onclick="openPIPModal('${e.id}')">PIP</button>`:''}</div></td> </tr>`}).join('')}</tbody> </table></div></div> </div>`;
+  <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Outstanding >110%</div><div class="stat-val">${outs}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Exceeds 100–110%</div><div class="stat-val">${exc}</div></div></div> <div class="stat-card teal"><div class="stat-info"><div class="stat-label">Fully Meets 80–100%</div><div class="stat-val">${meets}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Needs Impr. ≥60%</div><div class="stat-val">${needs}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Unsatisfactory</div><div class="stat-val">${unsat}</div></div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>#</th><th>Employee</th><th>Subsidiary</th><th>Department</th><th>KPIs</th><th>Score</th><th>Rating</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${scored.map((e,i)=>{const rt=PerfEngine.ratingLabel(e.sc);const kpiCount=DB.kpis.filter(k=>k.empId===e.id).length;const totalW=DB.kpis.filter(k=>k.empId===e.id).reduce((s,k)=>s+k.weight,0);return `<tr> <td style="font-family:var(--mono);color:var(--gray-400)">${i+1}</td> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(e.name)}</div><div><div class="emp-name">${e.name}</div><div class="emp-id">${e.id}</div></div></div></td> <td style="font-size:12px">${getSubName(e.sub)}</td> <td style="font-size:12px">${getDeptName(e.dept)}</td> <td style="font-family:var(--mono)">${kpiCount} ${totalW>100.01&&kpiCount?`<span class="badge badge-red" style="font-size:9px" title="KPI weights over-allocated: ${totalW}% (should be ≤100%)">⚠</span>`:''}</td> <td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:80px"><div class="progress-bar ${e.sc>=100?'green':e.sc>=80?'amber':'red'}" style="width:${Math.min(e.sc,120)/1.2}%"></div></div><span class="kpi-score ${rt.cls}" style="font-size:14px">${e.sc}%</span></div></td> <td><span class="badge ${e.sc>=100?'badge-green':e.sc>=80?'badge-teal':e.sc>=60?'badge-amber':'badge-red'}">${rt.label}</span></td> <td style="font-size:11px;color:var(--gray-400)">Q2 2026</td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" onclick="openMasterProfileModal('${e.id}')">${ICO.eye}</button>${e.sc<60?`<button class="btn btn-danger btn-xs" onclick="openPIPModal('${e.id}')">PIP</button>`:''}</div></td> </tr>`}).join('')}</tbody> </table></div></div> </div>`;
 }
 
 function filterScoreReview(val) {
@@ -4591,10 +4605,10 @@ PAGES.bonus = function(wrap) {
   const totalPend  = bonuses.filter(b=>b.status==='Pending').reduce((s,b)=>s+b.amount,0);
   const totalApprv = bonuses.filter(b=>b.status==='Approved').reduce((s,b)=>s+b.amount,0);
 
-  const ratingBg = { Outstanding:'#D1FAE5', 'Exceeds Expectations':'#DBEAFE', 'Meets Expectations':'#EDE9FE', 'Needs Improvement':'#FEF3C7', Unsatisfactory:'#FEE2E2' };
-  const ratingColor = { Outstanding:'#065F46', 'Exceeds Expectations':'#1E40AF', 'Meets Expectations':'#5B21B6', 'Needs Improvement':'#92400E', Unsatisfactory:'#991B1B' };
+  const ratingBg = { Outstanding:'#D1FAE5', 'Exceeds Expectations':'#DBEAFE', 'Fully Meets Expectations':'#EDE9FE', 'Needs Improvement':'#FEF3C7', Unsatisfactory:'#FEE2E2' };
+  const ratingColor = { Outstanding:'#065F46', 'Exceeds Expectations':'#1E40AF', 'Fully Meets Expectations':'#5B21B6', 'Needs Improvement':'#92400E', Unsatisfactory:'#991B1B' };
 
-  wrap.innerHTML = `<div class="page"> <div class="page-header"> <div><h1 class="page-title">Annual Bonus Management</h1> <div class="page-sub">Yearly performance-based bonus · ${year}</div> </div> <div style="display:flex;gap:10px"> <button class="btn btn-outline" onclick="openBonusRulesModal()">Bonus Scale</button> <button class="btn btn-primary btn-navy" onclick="generateYearlyBonuses()">Generate All Employees</button> <button class="btn btn-outline" onclick="openCreateBonusModal()">+ Single Bonus</button> </div> </div> <!-- Performance Rating Scale --> <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,var(--navy),#002D72)"> <div style="padding:16px 20px"> <div style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Annual Bonus Scale (% of Annual Salary)</div> <div style="display:flex;gap:10px;flex-wrap:wrap"> ${Object.entries(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(([r,p])=>`
+  wrap.innerHTML = `<div class="page"> <div class="page-header"> <div><h1 class="page-title">Annual Bonus Management</h1> <div class="page-sub">Yearly performance-based bonus · ${year}</div> </div> <div style="display:flex;gap:10px"> <button class="btn btn-outline" onclick="openBonusRulesModal()">Bonus Scale</button> <button class="btn btn-primary btn-navy" onclick="generateYearlyBonuses()">Generate All Employees</button> <button class="btn btn-outline" onclick="openCreateBonusModal()">+ Single Bonus</button> </div> </div> <!-- Performance Rating Scale --> <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,var(--navy),#002D72)"> <div style="padding:16px 20px"> <div style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Annual Bonus Scale (% of Annual Salary)</div> <div style="display:flex;gap:10px;flex-wrap:wrap"> ${Object.entries(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Fully Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(([r,p])=>`
             <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;text-align:center;min-width:100px"> <div style="font-size:18px;font-weight:900;color:var(--gold)">${(p*100).toFixed(0)}%</div> <div style="font-size:10px;color:rgba(255,255,255,.55);margin-top:2px">${r}</div> </div>`).join('')}
         </div> </div> </div> <!-- Stats --> <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px"> <div class="stat-card gold"><div class="stat-val">${fmtCurrency(totalPaid)}</div><div class="stat-lbl">Total Paid ${year}</div></div> <div class="stat-card green"><div class="stat-val">${fmtCurrency(totalApprv)}</div><div class="stat-lbl">Approved</div></div> <div class="stat-card amber"><div class="stat-val">${fmtCurrency(totalPend)}</div><div class="stat-lbl">Pending Approval</div></div> <div class="stat-card navy"><div class="stat-val">${bonuses.length}</div><div class="stat-lbl">Total Records</div></div> </div> <!-- Filters --> <div class="card" style="padding:12px 16px;margin-bottom:16px"> <div style="display:flex;gap:10px;flex-wrap:wrap"> <input class="form-control form-control-sm" id="bonusSearch" placeholder=" Search…" style="max-width:200px" oninput="renderBonusList()"> <select class="form-control form-control-sm" id="bonusFilterStatus" onchange="renderBonusList()" style="max-width:140px"> <option value="">All Status</option><option>Pending</option><option>Approved</option><option>Paid</option><option>Rejected</option> </select> <select class="form-control form-control-sm" id="bonusFilterSub" onchange="renderBonusList()" style="max-width:160px"> <option value="">All Subsidiaries</option> ${DB.subsidiaries.map(s=>`<option value="${s.id||s.code}">${s.name}</option>`).join('')}
         </select> </div> </div> <div id="bonusListWrap"></div> </div>`;
@@ -4615,7 +4629,7 @@ function generateYearlyBonuses() {
     const score = typeof PerfEngine !== 'undefined' ? PerfEngine.calcEmployeeScore(emp.id) : 0;
     const rating = score >= 110 ? 'Outstanding'
       : score >= 100 ? 'Exceeds Expectations'
-      : score >= 80  ? 'Meets Expectations'
+      : score >= 80  ? 'Fully Meets Expectations'
       : score >= 60  ? 'Needs Improvement'
       : 'Unsatisfactory';
 
@@ -4646,8 +4660,8 @@ function renderBonusList() {
   const search = (document.getElementById('bonusSearch')?.value||'').toLowerCase();
   const stF    = document.getElementById('bonusFilterStatus')?.value||'';
   const subF   = document.getElementById('bonusFilterSub')?.value||'';
-  const ratingBg    = { Outstanding:'#D1FAE5','Exceeds Expectations':'#DBEAFE','Meets Expectations':'#EDE9FE','Needs Improvement':'#FEF3C7',Unsatisfactory:'#FEE2E2' };
-  const ratingColor = { Outstanding:'#065F46','Exceeds Expectations':'#1E40AF','Meets Expectations':'#5B21B6','Needs Improvement':'#92400E',Unsatisfactory:'#991B1B' };
+  const ratingBg    = { Outstanding:'#D1FAE5','Exceeds Expectations':'#DBEAFE','Fully Meets Expectations':'#EDE9FE','Needs Improvement':'#FEF3C7',Unsatisfactory:'#FEE2E2' };
+  const ratingColor = { Outstanding:'#065F46','Exceeds Expectations':'#1E40AF','Fully Meets Expectations':'#5B21B6','Needs Improvement':'#92400E',Unsatisfactory:'#991B1B' };
 
   let rows = (DB.bonuses||[]).map(b => ({ ...b, emp: getEmp(b.empId) })).filter(b=>b.emp);
   if (search) rows = rows.filter(b => b.emp.name.toLowerCase().includes(search));
@@ -4676,7 +4690,7 @@ function renderBonusList() {
 function openCreateBonusModal() {
   openModal('wide', `
     <div class="modal-header"><span class="modal-title">Create Bonus Record</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="bn_emp" onchange="updateBonusCalc()"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name} (${e.id}) — ${getSubName(e.sub)}</option>`).join('')}
-          </select> </div> <div class="form-group"><label class="form-label required">Performance Rating</label> <select class="form-control" id="bn_rating" onchange="updateBonusCalc()"> <option value="">Select rating…</option> ${Object.keys(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(r=>`<option value="${r}">${r} (${((PayrollEngine.BONUS_RATINGS||{})[r]||0)*100}%)</option>`).join('')}
+          </select> </div> <div class="form-group"><label class="form-label required">Performance Rating</label> <select class="form-control" id="bn_rating" onchange="updateBonusCalc()"> <option value="">Select rating…</option> ${Object.keys(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Fully Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(r=>`<option value="${r}">${r} (${((PayrollEngine.BONUS_RATINGS||{})[r]||0)*100}%)</option>`).join('')}
           </select> </div> </div> <div id="bn_calc_box" style="display:none;background:var(--navy);color:white;border-radius:var(--radius);padding:14px 18px;margin-bottom:14px"> <div style="display:flex;gap:24px;flex-wrap:wrap"> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Annual Salary</div><div id="bn_annual" style="font-size:18px;font-weight:900;color:white">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Bonus %</div><div id="bn_pct" style="font-size:18px;font-weight:900;color:var(--gold)">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Bonus Amount</div><div id="bn_amount" style="font-size:22px;font-weight:900;color:#86EFAC">—</div></div> </div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Cycle</label> <input class="form-control" id="bn_cycle" value="ANNUAL-${new Date().getFullYear()}" placeholder="ANNUAL-2026"> </div> <div class="form-group"><label class="form-label required">Pay in Month</label> <input class="form-control" id="bn_month" type="month" value="${new Date().getFullYear()}-12"> </div> </div> <div class="form-group"><label class="form-label">Notes</label> <input class="form-control" id="bn_desc" placeholder="Optional notes…"> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveBonus()">Create Bonus</button> </div>`);
 }
 
@@ -4738,7 +4752,7 @@ function openBonusRulesModal() {
       PayrollEngine.BONUS_RATINGS || {
         'Outstanding':          0.20,
         'Exceeds Expectations': 0.15,
-        'Meets Expectations':   0.10,
+        'Fully Meets Expectations':   0.10,
         'Needs Improvement':    0.05,
         'Unsatisfactory':       0.00,
       }
@@ -4750,14 +4764,14 @@ function openBonusRulesModal() {
   const ratingColors = {
     'Outstanding':          { bg:'#D1FAE5', color:'#065F46' },
     'Exceeds Expectations': { bg:'#DBEAFE', color:'#1E40AF' },
-    'Meets Expectations':   { bg:'#EDE9FE', color:'#5B21B6' },
+    'Fully Meets Expectations':   { bg:'#EDE9FE', color:'#5B21B6' },
     'Needs Improvement':    { bg:'#FEF3C7', color:'#92400E' },
     'Unsatisfactory':       { bg:'#FEE2E2', color:'#991B1B' },
   };
   const kpiRanges = {
     'Outstanding':          '110%+',
     'Exceeds Expectations': '90–109%',
-    'Meets Expectations':   '70–89%',
+    'Fully Meets Expectations':   '80–100%',
     'Needs Improvement':    '50–69%',
     'Unsatisfactory':       'Below 50%',
   };
@@ -4866,7 +4880,7 @@ function resetBonusScale() {
   window._bonusRatings = {
     'Outstanding':          0.20,
     'Exceeds Expectations': 0.15,
-    'Meets Expectations':   0.10,
+    'Fully Meets Expectations':   0.10,
     'Needs Improvement':    0.05,
     'Unsatisfactory':       0.00,
   };
