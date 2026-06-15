@@ -706,6 +706,8 @@ const SupaWrite = {
   },
   async savePayrollBatch(records) {
     if (!SupaSync.connected) return;
+    const month = records[0]?.month;
+    if (!month) return;
     try {
       const rows = records.map(p => ({
         employee_id: p.empId, month: p.month,
@@ -714,9 +716,11 @@ const SupaWrite = {
         late_deduction: p.lateDeduction||0, absent_deduction: p.absentDeduction||0,
         eid_bonus: p.eidBonus||0, status: p.status||'Processed',
       }));
-      // Chunk into 50-row batches to avoid request size limits
+      // Delete existing month records first, then insert fresh — avoids needing a unique constraint
+      await SUPA.delete('payroll', `month=eq.${encodeURIComponent(month)}`);
+      // Chunk into 50-row batches
       for (let i=0; i<rows.length; i+=50) {
-        await SUPA.upsert('payroll', rows.slice(i,i+50), 'employee_id,month');
+        await SUPA.fetch('payroll', { method:'POST', body: JSON.stringify(rows.slice(i,i+50)), prefer:'return=minimal' });
       }
     } catch(e) { console.warn('SupaWrite.savePayrollBatch:', e.message); }
   },
