@@ -251,7 +251,7 @@ const PayrollEngine = {
     const advanceDeduct = +(payrow.advance       || 0);
     const lateDeduction = +(payrow.lateDeduction || 0);
     const absentDeduct  = +(payrow.absentDeduction|| 0);
-    const loanDeduct    = +(payrow.loanDeduction || this.getLoanDeductions(emp.id));
+    const loanDeduct    = 0;
     const otherDeduct   = +(payrow.otherDeductions|| 0);
 
     const totalDeductions = tax + advanceDeduct + lateDeduction + absentDeduct + loanDeduct + otherDeduct;
