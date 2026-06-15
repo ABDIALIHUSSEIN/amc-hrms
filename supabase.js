@@ -291,12 +291,13 @@ const SupaSync = {
       SUPA.select('settings',           'limit=1'),
       SUPA.select('guarantors',         'order=updated_at.desc&limit=500'),
       SUPA.select('bonus_rules',        'order=updated_at.desc&limit=200'),
+      SUPA.select('backup_logs',        'order=created_at.desc&limit=50'),
     ]);
 
     const [subs, depts, emps, users, leaveReqs, leaveBals,
            kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att,
            loans, salAdv, bonuses, reqs, cands, trainings, discCases, succPlans,
-           settingsRows, guarantorRows, bonusRuleRows] = loads.map(r => r.value || []);
+           settingsRows, guarantorRows, bonusRuleRows, backupLogRows] = loads.map(r => r.value || []);
 
     if (subs?.length)   DB.subsidiaries   = subs;
     if (depts?.length)  DB.departments    = depts.map(d => ({ ...d, sub: d.subsidiary_id, head: d.head_employee_id }));
@@ -434,6 +435,7 @@ const SupaSync = {
     if (settingsRows?.length) DB.settings          = settingsRows[0]?.doc || DB.settings || {};
     if (guarantorRows?.length) DB.guarantors        = docMap(guarantorRows);
     if (bonusRuleRows?.length) DB.bonusRules        = docMap(bonusRuleRows);
+    if (backupLogRows?.length) DB.backupLogs        = backupLogRows;
 
     // ── Phase 2 document-store collections (notices, etc.) ──
     await this.loadDocs();

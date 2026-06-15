@@ -311,6 +311,7 @@ const PAGE_LABELS = {
   training:'Training', performance:'Performance', kpi:'KPI Management',
   succession:'Succession', users:'User Management', disciplinary:'Disciplinary',
   reports:'Reports & Analytics', organization:'Organization', settings:'Settings',
+  backup:'Backup & Recovery',
 };
 
 function nav(page) {
@@ -2797,6 +2798,122 @@ function deleteDept(id) {
   scheduleSave();
   toast('Department deleted','success');
   renderOrgPage();
+}
+
+/* ── BACKUP & RECOVERY ── */
+PAGES.backup = function(wrap) {
+  if (!_isAdmin()) { wrap.innerHTML = renderAccessDenied('backup'); return; }
+  const logs = (DB.backupLogs || []);
+  const last = logs[0];
+  const statusBadge = s => {
+    const map = { success:'#D1FAE5|#065F46', partial:'#FEF3C7|#92400E', failed:'#FEE2E2|#991B1B', running:'#DBEAFE|#1E40AF' };
+    const [bg,col] = (map[s]||'#F3F4F6|#374151').split('|');
+    return `<span style="background:${bg};color:${col};font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;text-transform:uppercase">${s}</span>`;
+  };
+  const rows = logs.map(l => `
+    <tr>
+      <td style="font-family:var(--mono);font-size:12px">${l.backup_date||''}</td>
+      <td>${statusBadge(l.status||'unknown')}</td>
+      <td style="font-size:12px">${(l.record_count||0).toLocaleString()} records · ${l.table_count||0} tables</td>
+      <td style="font-size:12px">${l.triggered_by||'cron'}</td>
+      <td style="font-size:12px">${l.email_sent?'✅':'—'}</td>
+      <td>
+        ${l.drive_link ? `<a href="${l.drive_link}" target="_blank" class="btn btn-ghost btn-xs" style="color:var(--blue)">Download</a>` : '<span style="color:var(--gray-300);font-size:12px">—</span>'}
+      </td>
+      <td style="font-size:11px;color:var(--gray-400)">${(l.warnings||[]).length ? `${l.warnings.length} warning${l.warnings.length>1?'s':''}` : '—'}</td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `<div class="page">
+    <div class="page-header">
+      <div><h1 class="page-title">Backup & Recovery</h1>
+        <div class="page-sub">Automated monthly backup to Google Drive · Runs on 25th at 02:00</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-outline btn-sm" onclick="nav('backup')">Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="triggerBackup()" id="backupNowBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:5px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Backup Now
+        </button>
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+      <div class="stat-card navy"><div class="stat-info"><div class="stat-label">Total Backups</div><div class="stat-val">${logs.length}</div></div></div>
+      <div class="stat-card green"><div class="stat-info"><div class="stat-label">Last Status</div><div class="stat-val" style="font-size:14px">${last ? last.status : 'Never'}</div></div></div>
+      <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Last Run</div><div class="stat-val" style="font-size:14px">${last ? last.backup_date : '—'}</div></div></div>
+      <div class="stat-card blue"><div class="stat-info"><div class="stat-label">Records in Last Backup</div><div class="stat-val">${last ? (last.record_count||0).toLocaleString() : '—'}</div></div></div>
+    </div>
+    ${last?.drive_link ? `
+    <div class="card" style="margin-bottom:16px;border-left:4px solid var(--green)">
+      <div class="card-body" style="padding:14px 20px;display:flex;align-items:center;gap:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <div style="flex:1"><div style="font-weight:700;font-size:13px">Latest backup available on Google Drive</div>
+          <div style="font-size:12px;color:var(--gray-500)">${last.filename}</div>
+        </div>
+        <a href="${last.drive_link}" target="_blank" class="btn btn-outline btn-sm">Open in Drive</a>
+      </div>
+    </div>` : ''}
+    <div class="card">
+      <div class="card-header"><div class="card-title">Backup History</div></div>
+      <div class="card-body">
+        ${logs.length === 0 ? '<div class="empty-state"><h3>No backups yet</h3><p>Click "Backup Now" to create the first backup.</p></div>' : `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Date</th><th>Status</th><th>Size</th><th>Triggered by</th><th>Email</th><th>Download</th><th>Warnings</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`}
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><div class="card-title">Backup Schedule</div></div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--gray-50);border-radius:8px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <div><div style="font-weight:600;font-size:13px">Automatic — Every 25th at 02:00</div>
+              <div style="font-size:12px;color:var(--gray-500)">Cron: <code>0 2 25 * *</code> · Supabase Edge Function</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--gray-50);border-radius:8px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M3 12a9 9 0 009 9 9.75 9.75 0 006.74-2.74M21 12a9 9 0 00-9-9 9.75 9.75 0 00-6.74 2.74M3 3v6h6M21 21v-6h-6"/></svg>
+            <div><div style="font-weight:600;font-size:13px">Google Drive Storage</div>
+              <div style="font-size:12px;color:var(--gray-500)">HRM_BACKUPS / YYYY / MM-Month / HRM_BACKUP_YYYY-MM-DD.json</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--gray-50);border-radius:8px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <div><div style="font-weight:600;font-size:13px">Email Notification via Resend</div>
+              <div style="font-size:12px;color:var(--gray-500)">Sent to configured BACKUP_EMAIL_TO on every run</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+};
+
+async function triggerBackup() {
+  if (!_isAdmin()) { toast('Admin only', 'error'); return; }
+  const btn = document.getElementById('backupNowBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running backup…'; }
+  try {
+    const res = await fetch(`${SUPA.URL}/functions/v1/backup-runner`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA.KEY,
+        'Authorization': `Bearer ${SUPA.authToken || SUPA.KEY}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    toast(`Backup ${data.status} — ${data.record_count?.toLocaleString()} records`, data.status === 'success' ? 'success' : 'warning');
+    // Reload backup logs
+    const logs = await SUPA.select('backup_logs', 'order=created_at.desc&limit=50');
+    if (logs) DB.backupLogs = logs;
+    nav('backup');
+  } catch(e) {
+    toast(`Backup failed: ${e.message}`, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Backup Now'; }
+  }
 }
 
 /* ── SETTINGS ── */

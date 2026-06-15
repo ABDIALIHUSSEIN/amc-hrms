@@ -1,0 +1,8 @@
+[project]
+id = "lxpqnlrdnsmzhvnfrgwl"
+
+[functions.backup-runner]
+verify_jwt = false
+
+[functions.backup-runner.cron]
+schedule = "0 2 25 * *"
