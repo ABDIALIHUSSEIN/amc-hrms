@@ -1483,10 +1483,21 @@ function createNewKPITemplate() {
   closeModal(); toast('KPI template created','success'); nav('kpi');
 }
 
+function filterEmpSelect(srchId, selectId) {
+  const q = document.getElementById(srchId)?.value?.toLowerCase() || '';
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  Array.from(sel.options).forEach(o => {
+    o.hidden = q && !o.text.toLowerCase().includes(q);
+  });
+  const firstVisible = Array.from(sel.options).find(o => !o.hidden);
+  if (firstVisible && !Array.from(sel.options).find(o => o.selected && !o.hidden)) firstVisible.selected = true;
+}
+
 function assignKPITemplate(tmplId) {
   const tmpl = DB.kpiTemplates.find(t=>t.id===tmplId); if (!tmpl) return;
   openModal('wide', `
-    <div class="modal-header"><span class="modal-title">Assign KPI Template — ${tmpl.name}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="ka_emp">${filteredEmps().map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label required">Period</label> <select class="form-control" id="ka_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option><option>Annual-2026</option></select> </div> </div> <div style="margin-top:12px;padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px"> <strong>KPIs to assign:</strong><br> ${tmpl.kpis.map(k=>`<span style="display:inline-block;margin:3px 4px 0 0"><span class="badge badge-navy">${k.title}</span> <span style="font-size:10px;color:var(--gray-500)">${k.weight}%</span></span>`).join('')}
+    <div class="modal-header"><span class="modal-title">Assign KPI Template — ${tmpl.name}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <input class="form-control" placeholder="Search employee…" style="margin-bottom:6px" oninput="filterEmpSelect('ka_srch','ka_emp')" id="ka_srch"> <select class="form-control" id="ka_emp" size="5" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}</select> </div> <div class="form-group"><label class="form-label required">Period</label> <select class="form-control" id="ka_period"><option>Q2-2026</option><option>Q3-2026</option><option>Q4-2026</option><option>Annual-2026</option></select> </div> </div> <div style="margin-top:12px;padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px"> <strong>KPIs to assign:</strong><br> ${tmpl.kpis.map(k=>`<span style="display:inline-block;margin:3px 4px 0 0"><span class="badge badge-navy">${k.title}</span> <span style="font-size:10px;color:var(--gray-500)">${k.weight}%</span></span>`).join('')}
       </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="doAssignKPIs('${tmplId}')">Assign KPIs</button> </div>`);
 }
 
@@ -1722,7 +1733,7 @@ function openInlineKPIModal() {
     <div class="modal-header"><span class="modal-title">Assign KPI</span>${closeX()}</div>
     <div class="modal-body">
       <div class="form-row cols-2">
-        <div class="form-group"><label class="form-label required">Employee</label><select class="form-control" id="ik_emp">${filteredEmps().map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label required">Employee</label><input class="form-control" placeholder="Search employee…" style="margin-bottom:6px" oninput="filterEmpSelect('ik_srch','ik_emp')" id="ik_srch"><select class="form-control" id="ik_emp" size="4" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label required">Scoring Mode</label><select class="form-control" id="ik_mode" onchange="ikToggleMode()"><option value="weighted">Weighted (target / actual)</option><option value="binary">Binary (Pass / Fail)</option></select></div>
       </div>
       <div class="form-group" style="margin-bottom:12px"><label class="form-label required">KPI Name</label><input class="form-control" id="ik_title" placeholder="e.g. Submit Monthly Report"></div>
@@ -1806,7 +1817,8 @@ function kpiScoresHTML() {
 
 function filterScoreReview(val) {
   STATE.scoreSubFilter = val;
-  document.getElementById('kpiBody').innerHTML = kpiScoresHTML();
+  const el = document.getElementById('perfBody') || document.getElementById('kpiBody');
+  if (el) el.innerHTML = kpiScoresHTML();
 }
 
 function openPIPModal(empId) {
