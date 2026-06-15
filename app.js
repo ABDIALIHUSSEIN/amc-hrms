@@ -1330,9 +1330,10 @@ function openProjectModal(projId){
         <div class="form-group"><label class="form-label">End Date</label><input class="form-control" id="pr_end" type="date" value="${p?p.endDate:''}"></div>
         <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="pr_status">${['Active','On Hold','Completed','Cancelled'].map(s=>`<option ${p&&p.status===s?'selected':(!p&&s==='Active'?'selected':'')}>${s}</option>`).join('')}</select></div>
       </div>
-      <div class="form-group"><label class="form-label">Assigned Employees</label><select class="form-control" id="pr_team" multiple size="5" style="height:auto">${filteredEmps().map(e=>`<option value="${e.id}" ${team.includes(e.id)?'selected':''}>${e.name}</option>`).join('')}</select><div style="font-size:11px;color:var(--gray-400);margin-top:3px">Ctrl/Cmd-click to select multiple</div></div>
+      <div class="form-group"><label class="form-label">Assigned Employees</label><input class="form-control" id="pr_team_srch" placeholder="Search employees…" oninput="filterEmpSelect('pr_team_srch','pr_team')" style="margin-bottom:6px"><select class="form-control" id="pr_team" multiple size="8" style="height:200px">${filteredEmps().map(e=>`<option value="${e.id}" ${team.includes(e.id)?'selected':''}>${e.name}</option>`).join('')}</select><div style="font-size:11px;color:var(--gray-400);margin-top:3px">Ctrl/Cmd-click to select multiple</div></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProjectForm('${projId||''}')">Save Project</button></div>`);
+  requestAnimationFrame(()=>{ const s=document.getElementById('pr_team'); if(s) s.scrollTop=0; });
 }
 
 function saveProjectForm(projId){
