@@ -614,7 +614,7 @@ function globalSearch(val) {
   if (!val || val.length < 2) { drop.style.display = 'none'; return; }
   const q = val.toLowerCase();
   const matches = DB.employees.filter(e => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) ||
-    e.email.toLowerCase().includes(q) || e.title.toLowerCase().includes(q)
+    (e.email||'').toLowerCase().includes(q) || e.title.toLowerCase().includes(q)
   ).slice(0, 8);
   if (!matches.length) { drop.style.display = 'none'; return; }
   drop.style.display = 'block';
@@ -902,7 +902,7 @@ function filterEmps() {
   const fg = (document.getElementById('fGrade')||{}).value||'';
   const fc = (document.getElementById('fCont')||{}).value||'';
   let emps = filteredEmps(false);
-  if (s) emps = emps.filter(e => e.name.toLowerCase().includes(s.toLowerCase())||e.id.includes(s)||e.email.includes(s)||e.title.toLowerCase().includes(s.toLowerCase()));
+  if (s) emps = emps.filter(e => e.name.toLowerCase().includes(s.toLowerCase())||e.id.includes(s)||(e.email||'').includes(s)||e.title.toLowerCase().includes(s.toLowerCase()));
   if (fd) emps = emps.filter(e => e.dept===fd);
   if (fs) emps = emps.filter(e => e.sub===fs);
   if (fg) emps = emps.filter(e => e.grade===fg);
