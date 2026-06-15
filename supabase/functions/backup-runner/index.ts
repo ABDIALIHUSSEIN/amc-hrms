@@ -150,7 +150,9 @@ Deno.serve(async (req) => {
     const serviceAccount = JSON.parse(Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON") || "{}");
     if (!serviceAccount.client_email) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
 
-    const token = await getGoogleToken(serviceAccount);
+    const token = await getGoogleToken(serviceAccount, [
+      "https://www.googleapis.com/auth/drive.file",
+    ]);
 
     const year = new Date().getFullYear().toString();
     const monthNum = String(new Date().getMonth() + 1).padStart(2, "0");
@@ -187,6 +189,24 @@ Deno.serve(async (req) => {
     const uploadData = await uploadRes.json();
     if (!uploadData.id) throw new Error(JSON.stringify(uploadData));
     driveFileId = uploadData.id;
+
+    // Make file accessible to anyone with the link
+    await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "reader", type: "anyone" }),
+    });
+
+    // Also share with the backup email recipient
+    const emailTo = Deno.env.get("BACKUP_EMAIL_TO");
+    if (emailTo) {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions?sendNotificationEmail=false`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "reader", type: "user", emailAddress: emailTo }),
+      });
+    }
+
     driveLink = `https://drive.google.com/file/d/${driveFileId}/view`;
   } catch (e: any) {
     driveError = e.message;
@@ -247,7 +267,7 @@ Deno.serve(async (req) => {
 });
 
 // ── Google OAuth2 via service account JWT ──
-async function getGoogleToken(sa: any): Promise<string> {
+async function getGoogleToken(sa: any, scopes = ["https://www.googleapis.com/auth/drive.file"]): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const b64url = (s: string) =>
     btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -256,7 +276,7 @@ async function getGoogleToken(sa: any): Promise<string> {
   const claim = b64url(
     JSON.stringify({
       iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/drive.file",
+      scope: scopes.join(" "),
       aud: "https://oauth2.googleapis.com/token",
       exp: now + 3600,
       iat: now,
