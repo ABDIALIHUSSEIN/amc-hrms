@@ -821,10 +821,13 @@ PAGES.dashboard = function(wrap) {
   const late    = attToday.filter(a => a.status === 'Late').length;
   const absent  = attToday.filter(a => a.status === 'Absent').length;
   const pendingLeave = DB.leaveRequests.filter(l => l.status === 'Pending').length;
-  const payPending = DB.payroll.filter(p => p.status === 'Pending').length;
+  // Compute payroll stats from ALL active employees, not just saved payroll rows
+  const curMonth = STATE.payMonth || new Date().toISOString().slice(0,7);
+  const processedIds = new Set(DB.payroll.filter(p=>p.month===curMonth&&p.status==='Processed').map(p=>p.empId));
+  const payPending = activeEmps.filter(e=>!processedIds.has(e.id)).length;
+  const netPay = activeEmps.reduce((s,e)=>{ const p=DB.payroll.find(x=>x.empId===e.id&&x.month===curMonth)||{otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0}; return s+PayrollEngine.calc(e,p).netPay; },0);
   const allScores = emps.map(e => PerfEngine.calcEmployeeScore(e.id)).filter(s => s !== null);
   const avgPerf = allScores.length ? Math.round(allScores.reduce((a,b)=>a+b,0)/allScores.length) : 0;
-  const netPay = DB.payroll.reduce((s,p) => { const e=getEmp(p.empId); return s+(e?PayrollEngine.calc(e,p).netPay:0); }, 0);
   const attRate = emps.length ? Math.round((present / emps.length) * 100) : 0;
 
   // Subsidiary breakdown
