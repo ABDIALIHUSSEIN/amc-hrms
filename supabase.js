@@ -267,23 +267,32 @@ const SupaSync = {
 
   async loadAll() {
     const loads = await Promise.allSettled([
-      SUPA.select('subsidiaries',     'order=name'),
-      SUPA.select('departments',      'order=name'),
-      SUPA.select('employees',        'status=neq.Resigned&status=neq.Terminated&order=full_name&limit=500'),
-      SUPA.select('hrms_users',       'status=eq.Active&order=username'),
-      SUPA.select('leave_requests',   'order=applied_on.desc&limit=200'),
-      SUPA.select('leave_balances',   'select=*'),
-      SUPA.select('kpi_templates',    'order=name'),
-      SUPA.select('kpi_template_items','order=sort_order'),
-      SUPA.select('kpis',             'deleted_at=is.null&order=employee_id&limit=1000'),
-      SUPA.select('education_records','deleted_at=is.null&order=grad_year.desc'),
-      SUPA.select('audit_logs',       'order=created_at.desc&limit=50'),
-      SUPA.select('payroll',          `order=created_at.desc&limit=2000`),
-      SUPA.select('attendance',       `date=eq.${new Date().toISOString().split('T')[0]}&limit=200`),
+      SUPA.select('subsidiaries',       'order=name'),
+      SUPA.select('departments',        'order=name'),
+      SUPA.select('employees',          'status=neq.Resigned&status=neq.Terminated&order=full_name&limit=500'),
+      SUPA.select('hrms_users',         'status=eq.Active&order=username'),
+      SUPA.select('leave_requests',     'order=applied_on.desc&limit=200'),
+      SUPA.select('leave_balances',     'select=*'),
+      SUPA.select('kpi_templates',      'order=name'),
+      SUPA.select('kpi_template_items', 'order=sort_order'),
+      SUPA.select('kpis',               'deleted_at=is.null&order=employee_id&limit=1000'),
+      SUPA.select('education_records',  'deleted_at=is.null&order=grad_year.desc'),
+      SUPA.select('audit_logs',         'order=created_at.desc&limit=50'),
+      SUPA.select('payroll',            'order=created_at.desc&limit=2000'),
+      SUPA.select('attendance',         `date=eq.${new Date().toISOString().split('T')[0]}&limit=200`),
+      SUPA.select('loans',              'order=updated_at.desc&limit=500'),
+      SUPA.select('salary_advances',    'order=updated_at.desc&limit=500'),
+      SUPA.select('bonuses',            'order=updated_at.desc&limit=500'),
+      SUPA.select('requisitions',       'order=updated_at.desc&limit=500'),
+      SUPA.select('candidates',         'order=updated_at.desc&limit=500'),
+      SUPA.select('trainings',          'order=updated_at.desc&limit=200'),
+      SUPA.select('disciplinary_cases', 'order=updated_at.desc&limit=200'),
+      SUPA.select('succession_plans',   'order=updated_at.desc&limit=200'),
     ]);
 
     const [subs, depts, emps, users, leaveReqs, leaveBals,
-           kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att] = loads.map(r => r.value || []);
+           kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att,
+           loans, salAdv, bonuses, reqs, cands, trainings, discCases, succPlans] = loads.map(r => r.value || []);
 
     if (subs?.length)   DB.subsidiaries   = subs;
     if (depts?.length)  DB.departments    = depts.map(d => ({ ...d, sub: d.subsidiary_id, head: d.head_employee_id }));
@@ -408,7 +417,18 @@ const SupaSync = {
         ot: parseFloat(a.ot_hours)||0, shortHrs: 0,
       }));
     }
-    // ── Phase 2 document-store collections (loans, advances, notices, etc.) ──
+    // ── Doc-store modules loaded in Phase 1 ──
+    const docMap = r => r?.map(x => x.doc || x) || [];
+    if (loans?.length)     DB.loans             = docMap(loans);
+    if (salAdv?.length)    DB.salaryAdvances    = docMap(salAdv);
+    if (bonuses?.length)   DB.bonuses           = docMap(bonuses);
+    if (reqs?.length)      DB.requisitions      = docMap(reqs);
+    if (cands?.length)     DB.candidates        = docMap(cands);
+    if (trainings?.length) DB.trainings         = docMap(trainings);
+    if (discCases?.length) DB.disciplinaryCases = docMap(discCases);
+    if (succPlans?.length) DB.successionPlans   = docMap(succPlans);
+
+    // ── Phase 2 document-store collections (notices, etc.) ──
     await this.loadDocs();
     await this.loadKpiExtras();
     await this.loadP2();
@@ -773,6 +793,18 @@ const SupaWrite = {
         module: entry.module, ip_address: entry.ip||'browser',
       });
     } catch(e) { /* silent */ }
+  },
+  // Generic doc-store upsert for loans, salary_advances, bonuses,
+  // requisitions, candidates, trainings, disciplinary_cases, succession_plans
+  async saveDoc2(table, record) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.upsert(table, { id: record.id, doc: record }, 'id'); }
+    catch(e) { console.warn(`SupaWrite.saveDoc2(${table}):`, e.message); }
+  },
+  async deleteDoc2(table, id) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.delete(table, `id=eq.${encodeURIComponent(id)}`); }
+    catch(e) { console.warn(`SupaWrite.deleteDoc2(${table}):`, e.message); }
   },
 };
 
