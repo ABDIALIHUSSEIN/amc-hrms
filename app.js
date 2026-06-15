@@ -706,12 +706,10 @@ function exportPayroll() {
     const p = DB.payroll.find(x => x.empId===e.id && x.month===month) ||
               { empId:e.id, month, baseSalary:e.salary||0, allowance:e.allowance||0, otHours:0, advance:0, lateDeduction:0, absentDeduction:0, eidBonus:0, status:'Pending' };
     const c = PayrollEngine.calc(e, p);
-    return { 'ID': e.id, 'Name': e.name, 'Subsidiary': getSubName(e.sub), 'Department': getDeptName(e.dept),
-      'Base Salary': c.base, 'Allowance': c.allow, 'OT Hours': p.otHours||0, 'OT Pay': c.otPay,
-      'Eid Bonus': c.eidBonus, 'Gross': c.grossEarnings,
-      'Advance': c.advanceDeduct, 'Loan Deduction': c.loanDeduct,
-      'Total Deductions': c.totalDeductions, 'Net Pay': c.netPay,
-      'Gratuity': PayrollEngine.calcGratuity(c.base), 'Status': p.status, 'Month': month };
+    return { 'ID': e.id, 'Name': e.name, 'Department': getDeptName(e.dept), 'Subsidiary': getSubName(e.sub),
+      'Salary': c.base, 'Allowance': c.allow,
+      'Advance': c.advanceDeduct, 'Deduction': c.totalDeductions,
+      'Net Pay': c.netPay, 'Status': p.status, 'Month': month };
   });
   if (!rows.length) { toast('No employees found','warning'); return; }
   exportToExcel(rows, 'AMC_Payroll_'+month, 'Payroll');
