@@ -2362,7 +2362,10 @@ function runPayrollBatch(){
   if(typeof SupaWrite!=='undefined') SupaWrite.savePayrollBatch(batch);
   DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
-  toast(`Payroll batch ${month} processed for ${emps.length} employee(s)`,'success');nav('payroll');
+  toast(`Payroll batch ${month} processed for ${emps.length} employee(s) — downloading Excel for Finance…`,'success');
+  nav('payroll');
+  // Auto-download Excel so Finance gets the file immediately
+  setTimeout(exportPayroll, 800);
 }
 
 // Per-employee payroll adjustments (OT, bonus, advance, deductions) for the
