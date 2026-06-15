@@ -498,7 +498,7 @@ const SupaSync = {
         employee_number: e.id, subsidiary_id: e.sub, department_id: e.dept,
         first_name: e.name.split(' ')[0], last_name: e.name.split(' ').slice(1).join(' ') || e.name.split(' ')[0],
         title: e.title, email: e.email, phone: e.phone||null,
-        gender: e.gender==='M'?'Male':'Female',
+        gender: (e.gender==='M'||e.gender==='Male')?'Male':(e.gender==='F'||e.gender==='Female')?'Female':null,
         base_salary: e.salary, allowance: e.allowance,
         joined_date: e.joined, dob: e.dob||null,
         status: e.status, contract_type: e.contractType||'Permanent',
@@ -539,16 +539,21 @@ const SupaWrite = {
 
   async saveEmployee(emp) {
     if (!SupaSync.connected) return;
+    const genderVal = (emp.gender === 'M' || emp.gender === 'Male') ? 'Male'
+                    : (emp.gender === 'F' || emp.gender === 'Female') ? 'Female' : null;
     try {
       await SUPA.upsert('employees', {
         employee_number: emp.id, subsidiary_id: emp.sub, department_id: emp.dept||null,
         first_name: emp.name.split(' ')[0], last_name: emp.name.split(' ').slice(1).join(' ')||'',
         title: emp.title, email: emp.email, phone: emp.phone||null,
-        gender: emp.gender==='M'?'Male':'Female', base_salary: emp.salary,
+        gender: genderVal, base_salary: emp.salary,
         allowance: emp.allowance, joined_date: emp.joined, status: emp.status,
         contract_type: emp.contractType||'Permanent', nationality: emp.nationality||'Somali', grade: emp.grade||null,
       }, 'employee_number');
-    } catch(e) { console.warn('SupaWrite.saveEmployee:', e.message); }
+    } catch(e) {
+      console.warn('SupaWrite.saveEmployee:', e.message);
+      if (typeof toast === 'function') toast('Cloud save failed — employee saved locally only. Retry or check your connection.', 'error');
+    }
   },
   async saveLeaveRequest(l) {
     if (!SupaSync.connected) return;
