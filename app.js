@@ -258,6 +258,8 @@ function bootApp() {
   // Sync WhatsApp + SMS connection status from the server (cross-device).
   if (typeof refreshWAStatus === 'function') refreshWAStatus();
   if (typeof refreshSmsStatus === 'function') refreshSmsStatus();
+  // 25th-of-month payroll reminder
+  checkPayrollDay();
 }
 
 async function logout() {
@@ -2345,10 +2347,79 @@ function genPayslipModal(empId){
           <tr style="border-top:2px solid var(--gray-200)"><td style="font-weight:700;padding-top:8px;color:var(--red)">Total Deductions</td><td class="amount" style="font-weight:800;padding-top:8px;color:var(--red)">-${fmtCurrency(pc.totalDeductions)}</td></tr> <tr><td colspan="2" style="font-weight:700;color:var(--gray-600);padding:10px 0 4px;text-transform:uppercase;font-size:10px;letter-spacing:.6px">EMPLOYER</td></tr> <tr><td class="label">Monthly Gratuity Accrual</td><td class="amount" style="color:var(--green)">${fmtCurrency(pc.gratuity)}</td></tr> </table> <div class="payslip-net"><span class="payslip-net-label">NET PAY</span><span class="payslip-net-val">${fmtCurrency(pc.netPay)}</span></div> <div style="padding:10px 24px;font-size:11px;color:var(--gray-400);text-align:center">Computer-generated payslip · AMC HRMS v2.0 · ${STATE.payMonth}</div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Close</button> <button class="btn btn-outline" onclick="window.print()">Print Payslip</button> <button class="btn btn-primary" onclick="toast('Payslip downloaded as PDF','success')">${ICO.download} Download PDF</button> </div>`);
 }
 
+function checkPayrollDay(){
+  const now = new Date();
+  const day = now.getDate();
+  if (day !== 25) return;
+  const month = STATE.payMonth || now.toISOString().slice(0,7);
+  const emps = filteredEmps();
+  const processed = DB.payroll.filter(p=>p.month===month&&p.status==='Processed').length;
+  if (processed >= emps.length) return; // already fully processed, no reminder needed
+  // Show reminder after a short delay so dashboard renders first
+  setTimeout(()=>{
+    openModal('narrow',`
+      <div class="modal-header"><span class="modal-title" style="color:var(--navy)">Payroll Day — 25th</span>${closeX()}</div>
+      <div class="modal-body" style="text-align:center;padding:24px 20px">
+        <div style="font-size:40px;margin-bottom:12px">📋</div>
+        <div style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:6px">Today is Payroll Day</div>
+        <div style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Process ${month} payroll for <strong>${emps.length - processed}</strong> pending employee(s) and download Excel for Finance.</div>
+        <div style="padding:10px 14px;background:var(--amber-l);border-radius:var(--radius);font-size:12px;color:#92400E;margin-bottom:8px">
+          ${processed}/${emps.length} processed · ${emps.length-processed} pending
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal()">Remind Later</button>
+        <button class="btn btn-primary" onclick="closeModal();nav('payroll');setTimeout(runPayrollBatch,400)">${ICO.play} Process Now & Send to Finance</button>
+      </div>`);
+  }, 1200);
+}
+
 function runPayrollBatch(){
   const month=STATE.payMonth;
   const emps=filteredEmps();
   if(!emps.length){ toast('No active employees to process','warning'); return; }
+
+  // ── Pre-flight validation & confirmation modal ──
+  const alreadyProcessed = DB.payroll.filter(p=>p.month===month&&p.status==='Processed').length;
+  const dupCheck = {};
+  let dupCount = 0;
+  DB.payroll.filter(p=>p.month===month).forEach(p=>{ dupCheck[p.empId]=(dupCheck[p.empId]||0)+1; });
+  Object.values(dupCheck).forEach(n=>{ if(n>1) dupCount++; });
+  const previewRows = emps.map(e=>{
+    const p=DB.payroll.find(x=>x.empId===e.id&&x.month===month)||{otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0};
+    return PayrollEngine.calc(e,p);
+  });
+  const totalGross=previewRows.reduce((s,c)=>s+c.grossEarnings,0);
+  const totalNet=previewRows.reduce((s,c)=>s+c.netPay,0);
+  const totalDeduct=previewRows.reduce((s,c)=>s+c.totalDeductions,0);
+
+  openModal('narrow',`
+    <div class="modal-header"><span class="modal-title" style="color:var(--navy)">Payroll Batch — ${month}</span>${closeX()}</div>
+    <div class="modal-body">
+      <div style="padding:14px;background:var(--blue-l);border-radius:var(--radius);margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">PRE-FLIGHT CHECK</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+          <div>Employees to process:</div><div style="font-weight:800;text-align:right">${emps.length}</div>
+          <div>Total Gross:</div><div style="font-weight:800;text-align:right;color:var(--navy)">${fmtCurrency(totalGross)}</div>
+          <div>Total Deductions:</div><div style="font-weight:800;text-align:right;color:var(--red)">${fmtCurrency(totalDeduct)}</div>
+          <div>Total Net Pay:</div><div style="font-weight:800;text-align:right;color:var(--green)">${fmtCurrency(totalNet)}</div>
+        </div>
+      </div>
+      ${alreadyProcessed>0?`<div style="padding:10px 14px;background:var(--amber-l);border-radius:var(--radius);font-size:12px;color:#92400E;margin-bottom:10px">⚠ ${alreadyProcessed} employee(s) already processed this month — will be re-processed with updated data.</div>`:''}
+      ${dupCount>0?`<div style="padding:10px 14px;background:var(--red-l);border-radius:var(--radius);font-size:12px;color:#991B1B;margin-bottom:10px">⚠ ${dupCount} duplicate payroll record(s) detected — batch will clean and replace all records.</div>`:''}
+      <div style="padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px;color:var(--gray-500)">
+        Excel will auto-download after processing for Finance.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="closeModal();_execPayrollBatch()">Confirm & Process</button>
+    </div>`);
+}
+
+function _execPayrollBatch(){
+  const month=STATE.payMonth;
+  const emps=filteredEmps();
   const batch=[];
   emps.forEach(e=>{
     let p=DB.payroll.find(x=>x.empId===e.id&&x.month===month);
@@ -2356,13 +2427,11 @@ function runPayrollBatch(){
     else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance||0; }
     batch.push(p);
   });
-  // Single bulk upsert — avoids 130 individual API calls hitting rate limits
   if(typeof SupaWrite!=='undefined') SupaWrite.savePayrollBatch(batch);
   DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
-  toast(`Payroll batch ${month} processed for ${emps.length} employee(s) — downloading Excel for Finance…`,'success');
+  toast(`Payroll batch ${month} — ${emps.length} employees processed. Downloading Excel…`,'success');
   nav('payroll');
-  // Auto-download Excel so Finance gets the file immediately
   setTimeout(exportPayroll, 800);
 }
 
