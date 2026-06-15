@@ -915,7 +915,7 @@ function viewEmpModal(id) {
   const e = getEmp(id); if (!e) return;
   const sc = PerfEngine.calcEmployeeScore(id);
   const rt = sc!==null ? PerfEngine.ratingLabel(sc) : null;
-  const lb = DB.leaveBalances[id]||{annual:30,sick:14,maternity:0,paternity:0,used_annual:0,used_sick:0,used_maternity:0};
+  const lb = DB.leaveBalances[id]||{annual:(DB.settings?.annual_leave_days||30),sick:(DB.settings?.sick_leave_days||7),maternity:0,paternity:0,used_annual:0,used_sick:0,used_maternity:0};
   const yos = yearsOfService(e.joined);
   const pay = DB.payroll.find(p=>p.empId===id);
   const pc = pay ? PayrollEngine.calc(e, pay) : null;
@@ -1052,8 +1052,14 @@ function recomputeKpiFromTasks(kpiId){
   const k = DB.kpis.find(x=>x.id===kpiId); if (!k) return;
   const linked = (DB.tasks||[]).filter(t=>t.kpiId===kpiId);
   if (!linked.length) return;
-  const done = linked.filter(t=>t.status==='Completed').length;
-  k.actual = done; k.updatedBy = taskActor();
+  const done = linked.filter(t=>t.status==='Completed');
+  const hasNumeric = done.some(t=>t.actualValue!=null&&!isNaN(t.actualValue));
+  k.actual = hasNumeric
+    ? Math.round(done.reduce((s,t)=>s+(parseFloat(t.actualValue)||0),0)*100)/100
+    : done.length;
+  k.status = k.actual >= k.target ? 'Completed' : 'In Progress';
+  k.updatedBy = taskActor();
+  k.updated_at = new Date().toISOString();
   if (typeof SupaWrite!=='undefined') SupaWrite.saveKPI(k);
 }
 
@@ -1130,9 +1136,11 @@ function setTaskStatus(taskId, status){
 // Completing a task REQUIRES actual result + comments + completion date.
 function openTaskComplete(taskId){
   const t = (DB.tasks||[]).find(x=>x.id===taskId); if (!t) return;
+  const linkedKpi = t.kpiId ? DB.kpis.find(x=>x.id===t.kpiId) : null;
   openModal('narrow', `<div class="modal-header"><span class="modal-title">Complete Task — ${esc(t.title)}</span>${closeX()}</div>
     <div class="modal-body">
       <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Actual Result / Achievement</label><input class="form-control" id="tc_actual" placeholder="What was achieved"></div>
+      ${linkedKpi ? `<div class="form-group" style="margin-bottom:12px"><label class="form-label required">Actual Value <span style="font-size:11px;color:var(--gray-400)">(numeric — updates KPI: ${esc(linkedKpi.title)}, target ${linkedKpi.target} ${linkedKpi.unit||''})</span></label><input class="form-control" id="tc_actual_val" type="number" step="any" min="0" placeholder="e.g. 85"></div>` : ''}
       <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Supporting Comments</label><textarea class="form-control" id="tc_comments" rows="3"></textarea></div>
       <div class="form-row cols-2">
         <div class="form-group"><label class="form-label required">Completion Date</label><input class="form-control" id="tc_date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
@@ -1147,8 +1155,11 @@ function submitTaskComplete(taskId){
   const actual = sanitizeText(document.getElementById('tc_actual').value);
   const comments = sanitizeText(document.getElementById('tc_comments').value);
   const date = document.getElementById('tc_date').value;
+  const actualValEl = document.getElementById('tc_actual_val');
   if (!actual || !comments || !date) { toast('Actual result, comments and completion date are required','error'); return; }
-  Object.assign(t, { status:'Completed', actualResult:actual, comments, completionDate:date, evidenceUrl:sanitizeText(document.getElementById('tc_evidence').value), updatedBy:taskActor() });
+  if (actualValEl && t.kpiId && !actualValEl.value) { toast('Actual Value is required for KPI-linked tasks','error'); return; }
+  const actualValue = actualValEl && actualValEl.value !== '' ? parseFloat(actualValEl.value) : null;
+  Object.assign(t, { status:'Completed', actualResult:actual, actualValue, comments, completionDate:date, evidenceUrl:sanitizeText(document.getElementById('tc_evidence').value), updatedBy:taskActor() });
   if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(t);
   recomputeKpiFromTasks(t.kpiId);
   if (t.kpiId) { const k=DB.kpis.find(x=>x.id===t.kpiId); if (k) notifyUser(k.empId, 'kpi', `Task completed for KPI: ${k.title}`); }
@@ -1776,9 +1787,26 @@ function saveInlineKPI() {
 }
 
 function kpiScoresHTML() {
-  const scored = filteredEmps().map(e=>({...e,sc:PerfEngine.calcEmployeeScore(e.id)})).filter(e=>e.sc!==null).sort((a,b)=>b.sc-a.sc);
-  const outs=scored.filter(e=>e.sc>=110).length, exc=scored.filter(e=>e.sc>=90&&e.sc<110).length, meets=scored.filter(e=>e.sc>=70&&e.sc<90).length, needs=scored.filter(e=>e.sc>=50&&e.sc<70).length, unsat=scored.filter(e=>e.sc<50).length;
-  return `<div> <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Outstanding ≥110%</div><div class="stat-val">${outs}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Exceeds ≥90%</div><div class="stat-val">${exc}</div></div></div> <div class="stat-card teal"><div class="stat-info"><div class="stat-label">Meets ≥70%</div><div class="stat-val">${meets}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Needs Impr. ≥50%</div><div class="stat-val">${needs}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Unsatisfactory</div><div class="stat-val">${unsat}</div></div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>#</th><th>Employee</th><th>Subsidiary</th><th>Department</th><th>KPIs</th><th>Score</th><th>Rating</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${scored.map((e,i)=>{const rt=PerfEngine.ratingLabel(e.sc);const kpiCount=DB.kpis.filter(k=>k.empId===e.id).length;const totalW=DB.kpis.filter(k=>k.empId===e.id).reduce((s,k)=>s+k.weight,0);return `<tr> <td style="font-family:var(--mono);color:var(--gray-400)">${i+1}</td> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(e.name)}</div><div><div class="emp-name">${e.name}</div><div class="emp-id">${e.id}</div></div></div></td> <td style="font-size:12px">${getSubName(e.sub)}</td> <td style="font-size:12px">${getDeptName(e.dept)}</td> <td style="font-family:var(--mono)">${kpiCount} ${totalW>100.01&&kpiCount?`<span class="badge badge-red" style="font-size:9px" title="KPI weights over-allocated: ${totalW}% (should be ≤100%)">⚠</span>`:''}</td> <td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:80px"><div class="progress-bar ${e.sc>=90?'green':e.sc>=70?'amber':'red'}" style="width:${Math.min(e.sc,120)/1.2}%"></div></div><span class="kpi-score ${rt.cls}" style="font-size:14px">${e.sc}%</span></div></td> <td><span class="badge ${e.sc>=90?'badge-green':e.sc>=70?'badge-teal':e.sc>=50?'badge-amber':'badge-red'}">${rt.label}</span></td> <td style="font-size:11px;color:var(--gray-400)">Q2 2026</td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" onclick="openMasterProfileModal('${e.id}')">${ICO.eye}</button>${e.sc<70?`<button class="btn btn-danger btn-xs" onclick="openPIPModal('${e.id}')">PIP</button>`:''}</div></td> </tr>`}).join('')}</tbody> </table></div></div> </div>`;
+  if (!STATE.scoreSubFilter) STATE.scoreSubFilter = 'all';
+  const subFilter = STATE.scoreSubFilter;
+  let pool = filteredEmps().map(e=>({...e,sc:PerfEngine.calcEmployeeScore(e.id)})).filter(e=>e.sc!==null);
+  if (subFilter !== 'all') pool = pool.filter(e=>e.sub===subFilter);
+  const scored = pool.sort((a,b)=>b.sc-a.sc);
+  const outs=scored.filter(e=>e.sc>=110).length, exc=scored.filter(e=>e.sc>=100&&e.sc<110).length, meets=scored.filter(e=>e.sc>=80&&e.sc<100).length, needs=scored.filter(e=>e.sc>=60&&e.sc<80).length, unsat=scored.filter(e=>e.sc<60).length;
+  return `<div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <label style="font-size:13px;color:var(--gray-500)">Subsidiary:</label>
+    <select class="filter-select" onchange="filterScoreReview(this.value)">
+      <option value="all" ${subFilter==='all'?'selected':''}>All Subsidiaries</option>
+      ${DB.subsidiaries.map(s=>`<option value="${s.id}" ${subFilter===s.id?'selected':''}>${s.name}</option>`).join('')}
+    </select>
+  </div>
+  <div class="stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px"> <div class="stat-card gold"><div class="stat-info"><div class="stat-label">Outstanding ≥110%</div><div class="stat-val">${outs}</div></div></div> <div class="stat-card green"><div class="stat-info"><div class="stat-label">Exceeds ≥100%</div><div class="stat-val">${exc}</div></div></div> <div class="stat-card teal"><div class="stat-info"><div class="stat-label">Meets ≥80%</div><div class="stat-val">${meets}</div></div></div> <div class="stat-card amber"><div class="stat-info"><div class="stat-label">Needs Impr. ≥60%</div><div class="stat-val">${needs}</div></div></div> <div class="stat-card red"><div class="stat-info"><div class="stat-label">Unsatisfactory</div><div class="stat-val">${unsat}</div></div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>#</th><th>Employee</th><th>Subsidiary</th><th>Department</th><th>KPIs</th><th>Score</th><th>Rating</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${scored.map((e,i)=>{const rt=PerfEngine.ratingLabel(e.sc);const kpiCount=DB.kpis.filter(k=>k.empId===e.id).length;const totalW=DB.kpis.filter(k=>k.empId===e.id).reduce((s,k)=>s+k.weight,0);return `<tr> <td style="font-family:var(--mono);color:var(--gray-400)">${i+1}</td> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(e.name)}</div><div><div class="emp-name">${e.name}</div><div class="emp-id">${e.id}</div></div></div></td> <td style="font-size:12px">${getSubName(e.sub)}</td> <td style="font-size:12px">${getDeptName(e.dept)}</td> <td style="font-family:var(--mono)">${kpiCount} ${totalW>100.01&&kpiCount?`<span class="badge badge-red" style="font-size:9px" title="KPI weights over-allocated: ${totalW}% (should be ≤100%)">⚠</span>`:''}</td> <td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:80px"><div class="progress-bar ${e.sc>=100?'green':e.sc>=80?'amber':'red'}" style="width:${Math.min(e.sc,120)/1.2}%"></div></div><span class="kpi-score ${rt.cls}" style="font-size:14px">${e.sc}%</span></div></td> <td><span class="badge ${e.sc>=100?'badge-green':e.sc>=80?'badge-teal':e.sc>=60?'badge-amber':'badge-red'}">${rt.label}</span></td> <td style="font-size:11px;color:var(--gray-400)">Q2 2026</td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" onclick="openMasterProfileModal('${e.id}')">${ICO.eye}</button>${e.sc<60?`<button class="btn btn-danger btn-xs" onclick="openPIPModal('${e.id}')">PIP</button>`:''}</div></td> </tr>`}).join('')}</tbody> </table></div></div> </div>`;
+}
+
+function filterScoreReview(val) {
+  STATE.scoreSubFilter = val;
+  document.getElementById('kpiBody').innerHTML = kpiScoresHTML();
 }
 
 function openPIPModal(empId) {
@@ -2171,7 +2199,7 @@ function lvTab(tab,el){
 
 function leaveBalancesHTML(){
   return `<div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>Subsidiary</th><th>Annual (Rem/Total)</th><th>Sick</th><th>Maternity</th><th>Used Annual</th><th></th></tr></thead> <tbody>${filteredEmps().slice(0,30).map(e=>{
-      const lb=DB.leaveBalances[e.id]||{annual:30,sick:14,maternity:0,used_annual:0,used_sick:0};
+      const lb=DB.leaveBalances[e.id]||{annual:(DB.settings?.annual_leave_days||30),sick:(DB.settings?.sick_leave_days||7),maternity:0,used_annual:0,used_sick:0};
       const rem=lb.annual-(lb.used_annual||0),pct=Math.round((lb.used_annual||0)/lb.annual*100);
       return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${initials(e.name)}</div><div><div class="emp-name">${e.name}</div><div class="emp-id">${e.id}</div></div></div></td> <td style="font-size:11px">${getSubName(e.sub)}</td> <td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:80px"><div class="progress-bar ${pct>80?'red':pct>50?'amber':'green'}" style="width:${pct}%"></div></div><span style="font-size:12px;font-family:var(--mono)">${rem}/${lb.annual}</span></div></td> <td style="font-family:var(--mono);font-size:12px">${(lb.sick||0)-(lb.used_sick||0)}/${lb.sick||0}</td> <td style="font-family:var(--mono);font-size:12px">${lb.maternity||0}d</td> <td><span class="badge ${(lb.used_annual||0)>14?'badge-red':(lb.used_annual||0)>7?'badge-amber':'badge-green'}">${lb.used_annual||0} used</span></td> <td><button class="btn btn-ghost btn-xs" onclick="openLeaveReqModal('${e.id}')">Apply</button></td> </tr>`;
     }).join('')}</tbody> </table></div></div>`;
@@ -2479,13 +2507,13 @@ PAGES.organization = function(wrap) {
 
 /* ── SETTINGS ── */
 PAGES.settings = function(wrap) {
-  wrap.innerHTML=`<div class="page"> <div class="page-header"><div class="page-header-left"><div class="page-title">System Settings</div></div></div> <div class="settings-layout"> <div class="settings-menu"> ${[['profile','My Profile'],['company','Company'],['subsidiaries','Subsidiaries'],['roles','Roles & Access'],['payroll_cfg','Payroll Config'],['notif','Notifications'],['integrations','Integrations'],['security','Security & 2FA']].map(([k,l],i)=>`
+  wrap.innerHTML=`<div class="page"> <div class="page-header"><div class="page-header-left"><div class="page-title">System Settings</div></div></div> <div class="settings-layout"> <div class="settings-menu"> ${[['profile','My Profile'],['company','Company'],['subsidiaries','Subsidiaries'],['roles','Roles & Access'],['payroll_cfg','Payroll Config'],['leave_policy','Leave Policy'],['notif','Notifications'],['integrations','Integrations'],['security','Security & 2FA']].map(([k,l],i)=>`
           <div class="settings-menu-item ${i===0?'active':''}" onclick="settingsPane('${k}',this)">${l}</div>`).join('')}
       </div> <div id="settingsContent" class="settings-section">${settingsProfile()}</div> </div> </div>`;
 };
 function settingsPane(key,el){
   document.querySelectorAll('.settings-menu-item').forEach(e=>e.classList.remove('active'));el.classList.add('active');
-  const fns={profile:settingsProfile,company:settingsCompany,subsidiaries:settingsSubs,roles:settingsRoles,payroll_cfg:settingsPayCfg,notif:settingsNotif,integrations:settingsInteg,security:settingsSec};
+  const fns={profile:settingsProfile,company:settingsCompany,subsidiaries:settingsSubs,roles:settingsRoles,payroll_cfg:settingsPayCfg,leave_policy:settingsLeavePolicy,notif:settingsNotif,integrations:settingsInteg,security:settingsSec};
   document.getElementById('settingsContent').innerHTML=(fns[key]||settingsProfile)();
 }
 function settingsProfile(){return `<div class="settings-pane"> <div class="settings-pane-title">My Profile</div> <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:16px;background:var(--gray-50);border-radius:var(--radius-lg)"> <div class="avatar-xl">${STATE.user?STATE.user.initials:'SA'}</div> <div><div style="font-size:16px;font-weight:700">${STATE.user?.name||'Admin'}</div><div style="font-size:13px;color:var(--gray-500)">${STATE.user?.role||'Super Admin'}</div></div> <button class="btn btn-outline btn-sm" style="margin-left:auto">Change Photo</button> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Full Name</label><input class="form-control" value="${STATE.user?.name||''}"></div> <div class="form-group"><label class="form-label">Email</label><input class="form-control" value="${STATE.user?.email||''}"></div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Language</label><select class="form-control"><option>English</option><option>Somali (Af Soomaali)</option><option>Arabic</option></select></div> <div class="form-group"><label class="form-label">Theme</label><select class="form-control" onchange="applyTheme(this.value)"><option value="light"${STATE.theme==='light'?' selected':''}>Light Mode</option><option value="dark"${STATE.theme==='dark'?' selected':''}>Dark Mode</option></select></div> </div> <button class="btn btn-primary" onclick="toast('Profile saved','success')">Save Changes</button>
@@ -2581,6 +2609,30 @@ function saveCreateRole() {
   toast(`Role "${label}" created successfully`, 'success');
   settingsPane('roles', document.querySelector('.settings-menu-item.active'));
 }
+function settingsLeavePolicy(){
+  const s = DB.settings || {};
+  return `<div class="settings-pane"><div class="settings-pane-title">Leave Policy</div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label">Annual Leave (days/year)</label><input class="form-control" type="number" id="lp_annual" value="${s.annual_leave_days||30}" min="1" max="60"></div>
+      <div class="form-group"><label class="form-label">Sick Leave (days/year)</label><input class="form-control" type="number" id="lp_sick" value="${s.sick_leave_days||7}" min="1" max="30"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label">Maternity Leave (days)</label><input class="form-control" type="number" id="lp_maternity" value="${s.maternity_leave_days||90}" min="0" max="180"></div>
+      <div class="form-group"><label class="form-label">Paternity Leave (days)</label><input class="form-control" type="number" id="lp_paternity" value="${s.paternity_leave_days||7}" min="0" max="30"></div>
+    </div>
+    <p style="font-size:12px;color:var(--gray-400);margin-bottom:14px">Changes apply to new leave balances. Existing employee balances retain their current values.</p>
+    <button class="btn btn-primary" onclick="saveLeavePolicy()">Save Leave Policy</button>`;
+}
+function saveLeavePolicy(){
+  if (!DB.settings) DB.settings = {};
+  DB.settings.annual_leave_days = parseInt(document.getElementById('lp_annual').value)||30;
+  DB.settings.sick_leave_days   = parseInt(document.getElementById('lp_sick').value)||7;
+  DB.settings.maternity_leave_days = parseInt(document.getElementById('lp_maternity').value)||90;
+  DB.settings.paternity_leave_days = parseInt(document.getElementById('lp_paternity').value)||7;
+  scheduleSave();
+  toast('Leave policy saved','success');
+}
+
 function settingsPayCfg(){return `<div class="settings-pane"><div class="settings-pane-title">Payroll Configuration</div> <div class="form-row cols-2"><div class="form-group"><label class="form-label">Working Days/Month</label><input class="form-control" type="number" value="22"></div><div class="form-group"><label class="form-label">Working Hours/Day</label><input class="form-control" type="number" value="8"></div></div> <div class="form-row cols-2"><div class="form-group"><label class="form-label">OT Multiplier</label><input class="form-control" type="number" step="0.1" value="1.5"></div><div class="form-group"><label class="form-label">Max Advance %</label><input class="form-control" type="number" value="50"></div></div> <div class="section-divider"><span>Tax Brackets</span></div> <table class="table"><thead><tr><th>Threshold</th><th>Rate</th></tr></thead><tbody> <tr><td>Under $1,000</td><td>0%</td></tr><tr><td>$1,000–$2,999</td><td>4%</td></tr><tr><td>$3,000–$5,999</td><td>6%</td></tr><tr><td>$6,000+</td><td>8%</td></tr> </tbody></table> <button class="btn btn-primary" style="margin-top:14px" onclick="toast('Payroll config saved','success')">Save</button>
 </div>`;}
 function settingsNotif(){return `<div class="settings-pane"><div class="settings-pane-title">Notification Settings</div> ${[['Late Arrival SMS','Send SMS when 8+ min late'],['Leave Approval Email','Email on leave decision'],['Payroll Notification','Email when payslip ready'],['KPI Review Reminder','Monthly KPI review reminder'],['Disciplinary Alert','Alert on case status change']].map(([l,d])=>`<div class="toggle-row"><div><div class="toggle-label">${l}</div><div class="toggle-desc">${d}</div></div><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>`).join('')}
@@ -4434,9 +4486,9 @@ function generateYearlyBonuses() {
 
     const score = typeof PerfEngine !== 'undefined' ? PerfEngine.calcEmployeeScore(emp.id) : 0;
     const rating = score >= 110 ? 'Outstanding'
-      : score >= 90  ? 'Exceeds Expectations'
-      : score >= 70  ? 'Meets Expectations'
-      : score >= 50  ? 'Needs Improvement'
+      : score >= 100 ? 'Exceeds Expectations'
+      : score >= 80  ? 'Meets Expectations'
+      : score >= 60  ? 'Needs Improvement'
       : 'Unsatisfactory';
 
     const amount  = PayrollEngine.calcYearlyBonus ? PayrollEngine.calcYearlyBonus(emp, rating) : 0;
@@ -5147,6 +5199,7 @@ function persistDB() {
       departments:          DB.departments,
       educationRecords:     DB.educationRecords,
       notifications:        DB.notifications,
+      settings:             DB.settings,
       savedAt:              new Date().toISOString(),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -5186,7 +5239,7 @@ function loadPersistedDB() {
       'payroll','kpis','kpiTemplates','salaryAdvances','loans','bonuses',
       'bonusRules','notices','noticeAcknowledgments','auditLogs',
       'recruitment','training','disciplinary','departments',
-      'educationRecords','notifications',
+      'educationRecords','notifications','settings',
     ];
 
     let merged = 0;

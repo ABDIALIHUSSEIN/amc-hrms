@@ -152,7 +152,19 @@ users: [],
   notices: [],
 
   /* ── NOTICE ACKNOWLEDGMENTS ── */
-  noticeAcknowledgments: []
+  noticeAcknowledgments: [],
+
+  /* ── EXPENSE CLAIMS ── */
+  expenseClaims: [],
+
+  /* ── COMPANY ASSETS ── */
+  assets: [],
+
+  /* ── SYSTEM SETTINGS ── */
+  settings: {
+    sick_leave_days: 7,
+    annual_leave_days: 30,
+  }
 
 };
 
