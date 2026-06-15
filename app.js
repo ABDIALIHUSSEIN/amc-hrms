@@ -2510,20 +2510,123 @@ PAGES.reports = function(wrap) {
 };
 
 /* ── ORGANIZATION ── */
-PAGES.organization = function(wrap) {
-  wrap.innerHTML=`<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Organization Structure</div></div> </div> <div class="card" style="margin-bottom:14px"> <div class="card-body"> <div style="text-align:center;margin-bottom:24px"> <div style="display:inline-block;padding:14px 28px;background:linear-gradient(135deg,#001B44,#002D72);color:var(--white);border-radius:var(--radius-lg);font-size:16px;font-weight:800"> Asal Media Corporation<br><span style="font-size:11px;font-weight:400;opacity:.6">Corporate Parent Company</span> </div> </div> <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap"> ${DB.subsidiaries.map(s=>{
-            const emps=DB.employees.filter(e=>e.sub===s.id&&e.status==='Active');
-            const depts=DB.departments.filter(d=>d.subsidiary===s.id);
-            return `<div style="background:var(--gray-50);border:2px solid ${s.color}33;border-radius:var(--radius-lg);padding:16px;min-width:170px;text-align:center"> <div style="width:42px;height:42px;border-radius:12px;background:${s.color}22;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:${s.color}">${s.code}</div> <div style="font-size:13px;font-weight:700">${s.name}</div> <div style="font-size:11px;color:var(--gray-500);margin-top:3px">${s.sector}</div> <div style="margin-top:8px;display:flex;gap:6px;justify-content:center"> <span class="badge badge-navy">${emps.length} staff</span> <span class="badge badge-gray">${depts.length} depts</span> </div> </div>`;
+PAGES.organization = function(wrap) { renderOrgPage(wrap); };
+function renderOrgPage(wrap) {
+  if (!wrap) wrap = document.getElementById('mainContent');
+  wrap.innerHTML=`<div class="page">
+  <div class="page-header">
+    <div class="page-header-left"><div class="page-title">Organization Structure</div><div class="page-sub">${DB.departments.length} departments across ${DB.subsidiaries.length} subsidiaries</div></div>
+    <div class="page-actions"><button class="btn btn-primary btn-sm" onclick="openDeptModal()">${ICO.plus} New Department</button></div>
+  </div>
+  <div class="card" style="margin-bottom:14px"><div class="card-body">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="display:inline-block;padding:14px 28px;background:linear-gradient(135deg,#001B44,#002D72);color:var(--white);border-radius:var(--radius-lg);font-size:16px;font-weight:800">
+        Asal Media Corporation<br><span style="font-size:11px;font-weight:400;opacity:.6">Corporate Parent Company</span>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap">
+      ${DB.subsidiaries.map(s=>{
+        const emps=DB.employees.filter(e=>e.sub===s.id&&e.status==='Active');
+        const depts=DB.departments.filter(d=>d.sub===s.id);
+        return `<div style="background:var(--gray-50);border:2px solid ${s.color}33;border-radius:var(--radius-lg);padding:16px;min-width:170px;text-align:center">
+          <div style="width:42px;height:42px;border-radius:12px;background:${s.color}22;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:${s.color}">${s.code}</div>
+          <div style="font-size:13px;font-weight:700">${s.name}</div>
+          <div style="font-size:11px;color:var(--gray-500);margin-top:3px">${s.sector}</div>
+          <div style="margin-top:8px;display:flex;gap:6px;justify-content:center">
+            <span class="badge badge-navy">${emps.length} staff</span>
+            <span class="badge badge-gray">${depts.length} depts</span>
+          </div>
+          <button class="btn btn-outline btn-xs" style="margin-top:8px" onclick="openDeptModal('${s.id}')">${ICO.plus} Add Dept</button>
+        </div>`;
+      }).join('')}
+    </div>
+  </div></div>
+  <div class="card"><div class="card-header"><div class="card-title">Departments</div></div><div class="card-body">
+    ${DB.subsidiaries.map(s=>{
+      const depts=DB.departments.filter(d=>d.sub===s.id);
+      return `<div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid ${s.color}">${s.name} — ${depts.length} department${depts.length!==1?'s':''}</div>
+        ${depts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+          ${depts.map(d=>{
+            const head=getEmp(d.head);
+            const empCount=DB.employees.filter(e=>e.dept===d.id&&e.status==='Active').length;
+            return `<div class="org-node" style="position:relative;padding-bottom:36px">
+              <div class="org-node-name">${esc(d.name)}</div>
+              ${head?`<div class="org-node-title">${esc(head.name)}</div>`:'<div class="org-node-title" style="color:var(--gray-300)">No head assigned</div>'}
+              <div class="org-node-count">${empCount} active employees</div>
+              <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:4px">
+                <button class="btn btn-ghost btn-xs" title="Edit" onclick="openDeptModal(null,'${d.id}')">${ICO.edit}</button>
+                <button class="btn btn-ghost btn-xs" title="Delete" style="color:var(--red)" onclick="deleteDept('${d.id}')">${ICO.trash}</button>
+              </div>
+            </div>`;
           }).join('')}
-        </div> </div> </div> <div class="card"> <div class="card-header"><div class="card-title">Departments by Subsidiary</div></div> <div class="card-body"> ${DB.subsidiaries.map(s=>{
-          const depts=DB.departments.filter(d=>d.subsidiary===s.id);if(!depts.length)return '';
-          return `<div style="margin-bottom:18px"> <div style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid ${s.color}">${s.name}</div> <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px"> ${depts.map(d=>{const head=getEmp(d.head);const teams=DB.teams.filter(t=>t.dept===d.id);return `<div class="org-node"> <div class="org-node-name">${d.name}</div> ${head?`<div class="org-node-title">${head.name}</div>`:''}
-                <div class="org-node-count">${d.count} employees · ${teams.length} teams</div> </div>`;}).join('')}
-            </div> </div>`;
-        }).join('')}
-      </div> </div> </div>`;
-};
+        </div>` : `<div style="color:var(--gray-400);font-size:13px;padding:8px 0">No departments yet. <button class="btn btn-ghost btn-xs" onclick="openDeptModal('${s.id}')">Add one →</button></div>`}
+      </div>`;
+    }).join('')}
+  </div></div>
+  </div>`;
+}
+
+function openDeptModal(preSubId, editId) {
+  const d = editId ? DB.departments.find(x=>x.id===editId) : null;
+  const isEdit = !!d;
+  openModal('normal', `
+    <div class="modal-header"><span class="modal-title">${isEdit?'Edit':'New'} Department</span>${closeX()}</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Department Name</label>
+        <input class="form-control" id="dm_name" value="${esc(d?.name||'')}" placeholder="e.g. Finance & Accounting"></div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label required">Subsidiary</label>
+        <select class="form-control" id="dm_sub">
+          ${DB.subsidiaries.map(s=>`<option value="${s.id}" ${(d?.sub||preSubId)===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select></div>
+      <div class="form-group" style="margin-bottom:12px"><label class="form-label">Department Head</label>
+        <input class="form-control" placeholder="Search employee…" style="margin-bottom:6px" oninput="filterEmpSelect('dm_hsrch','dm_head')" id="dm_hsrch">
+        <select class="form-control" id="dm_head" size="4" style="height:auto">
+          <option value="">— None —</option>
+          ${filteredEmps().map(e=>`<option value="${e.id}" ${d?.head===e.id?'selected':''}>${e.name} (${e.id})</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDeptModal('${editId||''}')">Save Department</button>
+    </div>`);
+}
+
+function saveDeptModal(editId) {
+  const name = sanitizeText((document.getElementById('dm_name')||{}).value||'').trim();
+  if (!name) { toast('Department name required','error'); return; }
+  const sub  = document.getElementById('dm_sub').value;
+  const head = document.getElementById('dm_head').value || null;
+  if (editId) {
+    const d = DB.departments.find(x=>x.id===editId);
+    if (!d) return;
+    d.name = name; d.sub = sub; d.head = head;
+    if (typeof SupaWrite!=='undefined') SupaWrite.saveDepartment(d);
+    toast('Department updated','success');
+  } else {
+    const id = sub+'_'+name.toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,20)+'_'+Date.now().toString(36);
+    const d = { id, name, sub, head, count:0 };
+    DB.departments.push(d);
+    if (typeof SupaWrite!=='undefined') SupaWrite.saveDepartment(d);
+    toast('Department created','success');
+  }
+  scheduleSave();
+  closeModal();
+  renderOrgPage();
+}
+
+function deleteDept(id) {
+  const d = DB.departments.find(x=>x.id===id);
+  if (!d) return;
+  const inUse = DB.employees.filter(e=>e.dept===id&&e.status==='Active').length;
+  if (inUse>0) { toast(`Cannot delete — ${inUse} active employee(s) assigned to this department`,'error'); return; }
+  if (!confirm(`Delete department "${d.name}"? This cannot be undone.`)) return;
+  DB.departments = DB.departments.filter(x=>x.id!==id);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteDepartment(id);
+  scheduleSave();
+  toast('Department deleted','success');
+  renderOrgPage();
+}
 
 /* ── SETTINGS ── */
 PAGES.settings = function(wrap) {

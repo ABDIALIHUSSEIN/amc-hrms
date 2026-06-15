@@ -704,6 +704,21 @@ const SupaWrite = {
       });
     } catch(e) { console.warn('SupaWrite.savePayroll:', e.message); }
   },
+  async saveDepartment(d) {
+    if (!SupaSync.connected) return;
+    try {
+      await SUPA.upsert('departments', {
+        id: d.id, name: d.name, subsidiary_id: d.sub,
+        code: d.code || d.name.slice(0,8).replace(/\s/g,'-').toUpperCase(),
+        head_employee_id: d.head || null,
+      });
+    } catch(e) { console.warn('SupaWrite.saveDepartment:', e.message); }
+  },
+  async deleteDepartment(id) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.delete('departments', `id=eq.${encodeURIComponent(id)}`); }
+    catch(e) { console.warn('SupaWrite.deleteDepartment:', e.message); }
+  },
   async saveUser(u) {
     if (!SupaSync.connected) return;
     try {
