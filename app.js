@@ -2461,7 +2461,28 @@ function _execPayrollBatch(batchId){
     batch.push(p);
   });
   if(typeof SupaWrite!=='undefined') SupaWrite.savePayrollBatch(batch);
-  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:runTime,user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`PAYROLL BATCH SUCCESS — ${month} · BatchID: ${batchId} · ${emps.length} employees · Net: ${fmtCurrency(batch.reduce((s,p)=>{const e2=getEmp(p.empId);return s+(e2?PayrollEngine.calc(e2,p).netPay:0);},0))}`,module:'Payroll',ip:'127.0.0.1'});
+
+  // ── Local snapshot backup (survives browser restart) ──
+  try {
+    const snapshot = {
+      batchId, month, runTime, runBy: STATE.user?.name||'SYS',
+      employeeCount: batch.length,
+      rows: batch.map(p=>{ const e2=getEmp(p.empId); const c=e2?PayrollEngine.calc(e2,p):{}; return {
+        id:p.empId, name:e2?.name||'', dept:getDeptName(e2?.dept), sub:getSubName(e2?.sub),
+        salary:c.base||0, allowance:c.allow||0, advance:c.advanceDeduct||0,
+        deduction:c.totalDeductions||0, netPay:c.netPay||0, status:p.status, month:p.month
+      };}),
+    };
+    localStorage.setItem(`payroll_backup_${batchId}`, JSON.stringify(snapshot));
+    // Keep index of last 12 backups; evict oldest if over limit
+    const idx = JSON.parse(localStorage.getItem('payroll_backup_index')||'[]');
+    idx.unshift({ batchId, month, runTime, count: batch.length });
+    if(idx.length>12){ const old=idx.pop(); try{ localStorage.removeItem(`payroll_backup_${old.batchId}`); }catch(e){} }
+    localStorage.setItem('payroll_backup_index', JSON.stringify(idx));
+  } catch(e){ console.warn('Payroll snapshot backup failed:', e.message); }
+
+  const totalNet=batch.reduce((s,p)=>{const e2=getEmp(p.empId);return s+(e2?PayrollEngine.calc(e2,p).netPay:0);},0);
+  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:runTime,user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`PAYROLL BATCH SUCCESS — ${month} · BatchID: ${batchId} · ${emps.length} employees · Net: ${fmtCurrency(totalNet)} · Snapshot saved`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
   toast(`Batch ${batchId} — ${emps.length} employees processed & locked. Downloading Excel…`,'success');
   nav('payroll');
