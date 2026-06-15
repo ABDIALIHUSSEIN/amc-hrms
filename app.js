@@ -4978,11 +4978,11 @@ async function saveEmployeeForm(existingId) {
     toast(`Employee ${name} added (ID: ${empId})`, 'success');
   }
 
-  if (typeof SupaWrite !== 'undefined') SupaWrite.saveEmployee(empData);
   closeModal();
   nav('employees');
-
   scheduleSave();
+
+  if (typeof SupaWrite !== 'undefined') await SupaWrite.saveEmployee(empData);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
