@@ -2570,9 +2570,10 @@ function saveReq(){
   if(!title){toast('Title required','error');return;}
   if(!document.getElementById('rq_jd').checked){toast('Approved JD must be attached','error');return;}
   if(!document.getElementById('rq_kpis').value){toast('Annual KPIs are required','error');return;}
-  DB.requisitions.push({id:'REQ'+String(DB.requisitions.length+1).padStart(3,'0'),title,dept:document.getElementById('rq_dept').value,sub:document.getElementById('rq_sub').value,grade:document.getElementById('rq_grade').value,salaryMin:parseFloat(document.getElementById('rq_min').value)||0,salaryMax:parseFloat(document.getElementById('rq_max').value)||0,status:'New',requestedBy:'EMP001',approvedBy:'',date:new Date().toISOString().split('T')[0],kpis:document.getElementById('rq_kpis').value,hasJD:true});
+  const rq={id:'REQ'+String(DB.requisitions.length+1).padStart(3,'0'),title,dept:document.getElementById('rq_dept').value,sub:document.getElementById('rq_sub').value,grade:document.getElementById('rq_grade').value,salaryMin:parseFloat(document.getElementById('rq_min').value)||0,salaryMax:parseFloat(document.getElementById('rq_max').value)||0,status:'New',requestedBy:'EMP001',approvedBy:'',date:new Date().toISOString().split('T')[0],kpis:document.getElementById('rq_kpis').value,hasJD:true};
+  DB.requisitions.push(rq);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('requisitions',rq);
   closeModal();toast('Requisition submitted','success');nav('recruitment');
-
   scheduleSave();
 }
 
@@ -2597,9 +2598,10 @@ function saveTraining(){
   const title=document.getElementById('tr_title').value;if(!title){toast('Title required','error');return;}
   const start=document.getElementById('tr_start').value,end=document.getElementById('tr_end').value;
   const days=start&&end?Math.max(1,Math.ceil((new Date(end)-new Date(start))/(864e5))+1):1;
-  DB.trainings.push({id:'TRN'+String(DB.trainings.length+1).padStart(3,'0'),title,type:document.getElementById('tr_type').value,provider:document.getElementById('tr_prov').value,startDate:start,endDate:end,duration:days+' day(s)',cost:parseFloat(document.getElementById('tr_cost').value)||0,maxAttendees:parseInt(document.getElementById('tr_max').value)||20,enrolled:0,dept:'all',sub:document.getElementById('tr_sub').value,status:document.getElementById('tr_status').value,preEval:null,postEval:null});
+  const tr={id:'TRN'+String(DB.trainings.length+1).padStart(3,'0'),title,type:document.getElementById('tr_type').value,provider:document.getElementById('tr_prov').value,startDate:start,endDate:end,duration:days+' day(s)',cost:parseFloat(document.getElementById('tr_cost').value)||0,maxAttendees:parseInt(document.getElementById('tr_max').value)||20,enrolled:0,dept:'all',sub:document.getElementById('tr_sub').value,status:document.getElementById('tr_status').value,preEval:null,postEval:null};
+  DB.trainings.push(tr);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('trainings',tr);
   closeModal();toast('Training added','success');nav('training');
-
   scheduleSave();
 }
 
@@ -2654,10 +2656,11 @@ function saveNewCase(){
   const desc=document.getElementById('dc_desc').value;if(!desc){toast('Description required','error');return;}
   const empId=document.getElementById('dc_emp').value;
   const id='DIS'+String(DB.disciplinaryCases.length+1).padStart(3,'0');
-  DB.disciplinaryCases.push({id,empId,desc,type:document.getElementById('dc_type').value,severity:document.getElementById('dc_sev').value,date:document.getElementById('dc_date').value,reportedBy:'EMP001',investigator:'',status:'Open',action:'',actionDate:'',resolution:''});
+  const dc={id,empId,desc,type:document.getElementById('dc_type').value,severity:document.getElementById('dc_sev').value,date:document.getElementById('dc_date').value,reportedBy:'EMP001',investigator:'',status:'Open',action:'',actionDate:'',resolution:''};
+  DB.disciplinaryCases.push(dc);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('disciplinary_cases',dc);
   DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Opened case ${id} for ${getEmpName(empId)}`,module:'Disciplinary',ip:'127.0.0.1'});
   closeModal();toast('Case opened','success');nav('disciplinary');
-
   scheduleSave();
 }
 
@@ -4277,9 +4280,9 @@ function submitAdvanceRequest() {
   };
   if (!DB.salaryAdvances) DB.salaryAdvances = [];
   DB.salaryAdvances.unshift(adv);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('salary_advances',adv);
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Salary advance request: ${emp?.name} — ${fmtCurrency(amount)}`, module:'Advances', ip:'browser' });
   closeModal(); toast('Advance request submitted', 'success'); nav('advances');
-
   scheduleSave();
 }
 
@@ -4392,9 +4395,9 @@ function saveLoan() {
   };
   if (!DB.loans) DB.loans = [];
   DB.loans.unshift(loan);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('loans',loan);
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Loan issued: ${getEmp(empId)?.name} — ${fmtCurrency(amount)} × ${months}mo @ ${rate}%`, module:'Loans', ip:'browser' });
   closeModal(); toast(`Loan issued — ${fmtCurrency(monthly)}/month for ${months} months`, 'success'); nav('loans');
-
   scheduleSave();
 }
 
@@ -4461,6 +4464,8 @@ function submitLoanApplication(empId) {
   const loan = { id:'LON'+String(DB.loans.length+1).padStart(3,'0'), empId, principal:amount, months, interestRate:0, monthlyInstallment:Math.round(monthly*100)/100, totalRepayable:Math.round(monthly*months*100)/100, amountPaid:0, status:'Active', purpose, startDate:startDate.toISOString().split('T')[0], endDate:endDate.toISOString().split('T')[0], approvedBy:'HR Pending Review', history:[] };
   if (!DB.loans) DB.loans = [];
   DB.loans.unshift(loan);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('loans',loan);
+  scheduleSave();
   closeModal(); toast('Loan application submitted — awaiting HR approval', 'success'); nav('loans');
 }
 
@@ -4796,6 +4801,7 @@ function generateYearlyBonuses() {
     };
     if (!DB.bonuses) DB.bonuses = [];
     DB.bonuses.unshift(b);
+    if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('bonuses',b);
     created++;
   });
 
@@ -4878,6 +4884,7 @@ function saveBonus() {
   };
   if (!DB.bonuses) DB.bonuses = [];
   DB.bonuses.unshift(b);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('bonuses',b);
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Created bonus: ${emp.name} — ${rating} — ${fmtCurrency(amount)}`, module:'Bonus', ip:'browser' });
   closeModal(); toast(`Bonus created: ${fmtCurrency(amount)} for ${emp.name}`, 'success'); nav('bonus');
 
@@ -5749,6 +5756,7 @@ function submitSelfAdvance(empId) {
     approvedBy:  '', approvedAt: '', deductedAt: '', notes: '',
   };
   DB.salaryAdvances.unshift(adv);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('salary_advances',adv);
   DB.auditLogs.unshift({
     id: DB.auditLogs.length + 1,
     time: new Date().toISOString().replace('T',' ').slice(0,16),
@@ -5933,6 +5941,7 @@ function submitSelfLoan(empId) {
     history:            [],
   };
   DB.loans.unshift(loan);
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('loans',loan);
   DB.auditLogs.unshift({
     id: DB.auditLogs.length + 1,
     time: new Date().toISOString().replace('T',' ').slice(0,16),
