@@ -352,7 +352,7 @@ const SupaSync = {
       }));
     }
     if (kpis?.length) {
-      DB.kpis = kpis.map(k => ({
+      const cloudKpis = kpis.map(k => ({
         id:         k.id,
         empId:      k.employee_id,
         templateId: k.template_id || '',
@@ -367,6 +367,12 @@ const SupaSync = {
         approvalStatus: k.approval_status || 'Pending', approvedBy: k.approved_by || '', approvedAt: k.approved_at || '',
         projectId: k.project_id || '', dueDate: k.due_date || '',
       }));
+      const cloudIds = new Set(cloudKpis.map(k => k.id));
+      // Preserve any locally-created KPIs not yet synced to cloud
+      const localOnly = (DB.kpis || []).filter(k => !cloudIds.has(k.id));
+      DB.kpis = [...cloudKpis, ...localOnly];
+      // Re-push any un-synced KPIs
+      if (localOnly.length) localOnly.forEach(k => SupaWrite.saveKPI(k));
     }
     if (eduRecs?.length) {
       DB.educationRecords = eduRecs.map(e => ({
@@ -593,7 +599,10 @@ const SupaWrite = {
         project_id: k.projectId||null, due_date: k.dueDate||null,
         updated_at: new Date().toISOString(),
       });
-    } catch(e) { console.warn('SupaWrite.saveKPI:', e.message); }
+    } catch(e) {
+      console.warn('SupaWrite.saveKPI:', e.message);
+      if (typeof toast === 'function') toast('KPI cloud save failed — saved locally. Check connection.', 'error');
+    }
   },
   async saveKpiAudit(entry) {
     if (!SupaSync.connected) return;
