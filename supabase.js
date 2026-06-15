@@ -278,7 +278,7 @@ const SupaSync = {
       SUPA.select('kpis',             'deleted_at=is.null&order=employee_id&limit=1000'),
       SUPA.select('education_records','deleted_at=is.null&order=grad_year.desc'),
       SUPA.select('audit_logs',       'order=created_at.desc&limit=50'),
-      SUPA.select('payroll',          `order=created_at.desc&limit=200`),
+      SUPA.select('payroll',          `order=created_at.desc&limit=2000`),
       SUPA.select('attendance',       `date=eq.${new Date().toISOString().split('T')[0]}&limit=200`),
     ]);
 
@@ -701,8 +701,24 @@ const SupaWrite = {
         ot_hours: p.otHours||0, advance: p.advance||0,
         late_deduction: p.lateDeduction||0, absent_deduction: p.absentDeduction||0,
         eid_bonus: p.eidBonus||0, status: p.status||'Processed',
-      });
+      }, 'employee_id,month');
     } catch(e) { console.warn('SupaWrite.savePayroll:', e.message); }
+  },
+  async savePayrollBatch(records) {
+    if (!SupaSync.connected) return;
+    try {
+      const rows = records.map(p => ({
+        employee_id: p.empId, month: p.month,
+        base_salary: p.baseSalary||0, allowance: p.allowance||0,
+        ot_hours: p.otHours||0, advance: p.advance||0,
+        late_deduction: p.lateDeduction||0, absent_deduction: p.absentDeduction||0,
+        eid_bonus: p.eidBonus||0, status: p.status||'Processed',
+      }));
+      // Chunk into 50-row batches to avoid request size limits
+      for (let i=0; i<rows.length; i+=50) {
+        await SUPA.upsert('payroll', rows.slice(i,i+50), 'employee_id,month');
+      }
+    } catch(e) { console.warn('SupaWrite.savePayrollBatch:', e.message); }
   },
   async saveDepartment(d) {
     if (!SupaSync.connected) return;

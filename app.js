@@ -2348,12 +2348,15 @@ function runPayrollBatch(){
   const month=STATE.payMonth;
   const emps=filteredEmps();
   if(!emps.length){ toast('No active employees to process','warning'); return; }
+  const batch=[];
   emps.forEach(e=>{
     let p=DB.payroll.find(x=>x.empId===e.id&&x.month===month);
-    if(!p){ p={empId:e.id,month,baseSalary:e.salary,allowance:e.allowance,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Processed'}; DB.payroll.push(p); }
-    else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance; }
-    if(typeof SupaWrite!=='undefined') SupaWrite.savePayroll(p);
+    if(!p){ p={empId:e.id,month,baseSalary:e.salary,allowance:e.allowance||0,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Processed'}; DB.payroll.push(p); }
+    else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance||0; }
+    batch.push(p);
   });
+  // Single bulk upsert — avoids 130 individual API calls hitting rate limits
+  if(typeof SupaWrite!=='undefined') SupaWrite.savePayrollBatch(batch);
   DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
   toast(`Payroll batch ${month} processed for ${emps.length} employee(s)`,'success');nav('payroll');
