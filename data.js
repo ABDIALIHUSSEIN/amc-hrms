@@ -190,11 +190,7 @@ const PayrollEngine = {
 
   /* ── Tax brackets (Somalia progressive) ── */
   calcTax(gross) {
-    if (gross <= 500)  return 0;
-    if (gross <= 1000) return (gross - 500)  * 0.04;
-    if (gross <= 3000) return 20 + (gross - 1000) * 0.06;
-    if (gross <= 6000) return 140 + (gross - 3000) * 0.08;
-    return 380 + (gross - 6000) * 0.10;
+    return 0;
   },
 
   /* ── YEARLY Bonus calculation (performance-based) ── */
