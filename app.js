@@ -2212,10 +2212,18 @@ function doApproveLeave(id) {
   r.approvedBy = getCurrentEmployee()?.id || STATE.user?.empId || 'MGR';
   r.approvedAt = new Date().toISOString().split('T')[0];
   if (typeof SupaWrite !== 'undefined') SupaWrite.saveLeaveRequest(r);
+
+  // Update leave balance
+  if (!DB.leaveBalances[r.empId]) DB.leaveBalances[r.empId] = { annual:(DB.settings?.annual_leave_days||30), sick:(DB.settings?.sick_leave_days||7), used_annual:0, used_sick:0 };
+  const lb = DB.leaveBalances[r.empId];
+  const days = r.days || 1;
+  if (r.type && r.type.toLowerCase().includes('sick')) lb.used_sick = (lb.used_sick||0) + days;
+  else lb.used_annual = (lb.used_annual||0) + days;
+  if (typeof SupaWrite !== 'undefined') SupaWrite.saveLeaveBalance(r.empId, lb);
+
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Approved leave: ${getEmp(r.empId)?.name} (${r.type} ${r.from}–${r.to})`, module:'Leave', ip:'browser' });
   toast('Leave request approved', 'success');
   nav('leave');
-
   scheduleSave();
 }
 function doRejectLeave(id) {
