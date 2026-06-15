@@ -703,8 +703,8 @@ function exportPayroll() {
   const month = STATE.payMonth || new Date().toISOString().slice(0,7);
   const emps = filteredEmps();
   const rows = emps.map(e => {
-    const p = DB.payroll.find(x => x.empId===e.id && x.month===month);
-    if (!p || p.status !== 'Processed') return null;
+    const p = DB.payroll.find(x => x.empId===e.id && x.month===month) ||
+              { empId:e.id, month, baseSalary:e.salary||0, allowance:e.allowance||0, otHours:0, advance:0, lateDeduction:0, absentDeduction:0, eidBonus:0, status:'Pending' };
     const c = PayrollEngine.calc(e, p);
     return { 'ID': e.id, 'Name': e.name, 'Subsidiary': getSubName(e.sub), 'Department': getDeptName(e.dept),
       'Base Salary': c.base, 'Allowance': c.allow, 'OT Hours': p.otHours||0, 'OT Pay': c.otPay,
@@ -712,8 +712,8 @@ function exportPayroll() {
       'Advance': c.advanceDeduct, 'Loan Deduction': c.loanDeduct,
       'Total Deductions': c.totalDeductions, 'Net Pay': c.netPay,
       'Gratuity': PayrollEngine.calcGratuity(c.base), 'Status': p.status, 'Month': month };
-  }).filter(Boolean);
-  if (!rows.length) { toast('No processed payroll records for '+month,'warning'); return; }
+  });
+  if (!rows.length) { toast('No employees found','warning'); return; }
   exportToExcel(rows, 'AMC_Payroll_'+month, 'Payroll');
 }
 
@@ -1308,12 +1308,29 @@ function kpiProjectsHTML(){
   const stBadge = { Active:'badge-green', 'On Hold':'badge-amber', Completed:'badge-blue', Cancelled:'badge-red' };
   return `<div class="card"><div class="card-header"><div class="card-title">Projects</div><button class="btn btn-primary btn-sm" onclick="openProjectModal()">${ICO.plus} New Project</button></div>
     <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Project</th><th>Owner</th><th>Dates</th><th>Team</th><th>Linked KPIs</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody>${projects.length ? projects.map(p=>{ const owner=getEmp(p.owner); const team=(p.assignedEmployees||[]).length; const linked=(DB.kpis||[]).filter(k=>k.projectId===p.id).length;
+    <tbody>${projects.length ? projects.map(p=>{ const owner=getEmp(p.owner); const team=(p.assignedEmployees||[]).length; const linkedArr=(DB.kpis||[]).filter(k=>k.projectId===p.id); const linked=linkedArr.length;
       return `<tr> <td style="font-weight:600;font-size:12px">${esc(p.name)}</td> <td style="font-size:12px">${owner?esc(owner.name):esc(p.owner||'—')}</td>
-      <td style="font-size:11px">${p.startDate||'—'} → ${p.endDate||'—'}</td> <td style="font-size:12px">${team} emp</td> <td style="font-size:12px">${linked}</td>
+      <td style="font-size:11px">${p.startDate||'—'} → ${p.endDate||'—'}</td> <td style="font-size:12px">${team} emp</td> <td style="font-size:12px">${linked ? `<button class="btn btn-ghost btn-xs" style="font-weight:700;color:var(--blue)" onclick="showProjectKPIs('${p.id}')">${linked} KPI${linked>1?'s':''}</button>` : '<span style="color:var(--gray-300)">0</span>'}</td>
       <td><span class="badge ${stBadge[p.status]||'badge-gray'}">${p.status}</span></td>
       <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openProjectModal('${p.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteProject('${p.id}')" title="Delete">${ICO.trash}</button></div></td> </tr>`;
     }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">No projects yet</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+function showProjectKPIs(projId){
+  const p=(DB.projects||[]).find(x=>x.id===projId); if(!p) return;
+  const kpis=(DB.kpis||[]).filter(k=>k.projectId===projId);
+  openModal('wide',`<div class="modal-header"><span class="modal-title">KPIs linked to ${esc(p.name)}</span>${closeX()}</div>
+    <div class="modal-body"><div class="table-wrap"><table class="table"><thead><tr><th>KPI</th><th>Employee</th><th>Mode</th><th>Target</th><th>Actual</th><th>Score</th><th>Status</th></tr></thead>
+    <tbody>${kpis.length ? kpis.map(k=>{const e=getEmp(k.empId);const ach=PerfEngine.calcAchievement(k);const bin=k.scoringMode==='binary';
+      return `<tr><td style="font-weight:600;font-size:12px">${esc(k.title)}</td><td style="font-size:12px">${e?esc(e.name):k.empId}</td>
+      <td><span class="badge ${bin?'badge-navy':'badge-gray'}" style="font-size:10px">${bin?'Binary':'Weighted'}</span></td>
+      <td style="font-family:var(--mono)">${bin?'—':k.target+' '+(k.unit||'')}</td>
+      <td style="font-family:var(--mono)">${bin?(k.status==='Completed'?'Completed':'Not Completed'):k.actual}</td>
+      <td><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:13px">${Math.round(ach)}%</span></td>
+      <td><span class="badge ${k.approvalStatus==='Approved'?'badge-green':k.approvalStatus==='Rejected'?'badge-red':'badge-amber'}" style="font-size:10px">${k.approvalStatus||'Pending'}</span></td></tr>`;
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:16px">No KPIs linked yet</td></tr>'}
+    </tbody></table></div></div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
 }
 
 function openProjectModal(projId){
@@ -1554,7 +1571,7 @@ function kpiAssignmentsHTML() {
   </div>`;
   return tiles + `<div class="card"><div class="card-header"> <div><div class="card-title">Employee KPI Assignments</div><div class="card-sub">Binary: set status (auto 100/0) · Weighted: edit actual</div></div> <button class="btn btn-primary btn-sm" onclick="openInlineKPIModal()">${ICO.plus} Assign KPI</button> </div><div class="card-body"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>KPI</th><th>Mode</th><th>Target / Status</th><th>Actual</th><th>Score</th><th>Weight</th><th>Period</th><th>Actions</th></tr></thead> <tbody>${kpis.map(k=>{const e=getEmp(k.empId);const ach=PerfEngine.calcAchievement(k);const binary=k.scoringMode==='binary';
     const tgtCell = binary ? `<select class="form-control" style="width:130px;font-size:12px" onchange="setKpiStatus('${k.id}',this.value)"><option ${k.status!=='Completed'?'selected':''}>Not Completed</option><option ${k.status==='Completed'?'selected':''}>Completed</option></select>` : `<span style="font-family:var(--mono)">${k.target} ${k.unit||''}</span>`;
-    const actCell = binary ? `<span style="color:var(--gray-300)">—</span>` : `<input type="number" class="form-control" style="width:90px;font-size:12px;font-family:var(--mono)" value="${k.actual}" onchange="updateKPIActual('${k.id}',this.value)">`;
+    const actCell = binary ? `<span style="font-family:var(--mono);font-weight:700;color:${k.score===100?'var(--green)':'var(--gray-400)'}">${k.score===100?'100 ✓':'0'}</span>` : `<input type="number" class="form-control" style="width:90px;font-size:12px;font-family:var(--mono)" value="${k.actual}" onchange="updateKPIActual('${k.id}',this.value)">`;
     return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:k.empId}</div><div class="emp-id">${k.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600;min-width:180px">${k.title}</td> <td><span class="badge ${binary?'badge-navy':'badge-gray'}" style="font-size:10px">${binary?'Binary':'Weighted'}</span> <span class="badge ${({Approved:'badge-green',Rejected:'badge-red'})[k.approvalStatus]||'badge-amber'}" style="font-size:9px" title="${k.approvalStatus==='Rejected'?'Excluded from score':'Counts toward score'}">${k.approvalStatus||'Pending'}</span></td> <td>${tgtCell}</td> <td>${actCell}</td> <td><div style="display:flex;align-items:center;gap:6px"><div class="progress" style="width:60px"><div class="progress-bar ${ach>=100?'green':ach>=70?'amber':'red'}" style="width:${Math.min(ach,100)}%"></div></div><span class="kpi-score ${ach>=100?'excellent':ach>=70?'average':'poor'}" style="font-size:12px">${Math.round(ach)}%</span></div></td> <td><input type="number" class="form-control" style="width:65px;font-size:12px;font-family:var(--mono);font-weight:700" value="${k.weight}" onchange="updateKPIWeight('${k.id}',this.value)" title="Weights for an employee should total 100%"></td> <td style="font-size:11px;color:var(--gray-400)">${k.periodType?k.periodType+' · ':''}${k.period||''}</td> <td><div style="display:flex;gap:2px"><button class="btn btn-ghost btn-xs" onclick="openKPIDetail('${k.id}')" title="Details · Approve · Reviews · Comments">${ICO.eye}</button><button class="btn btn-ghost btn-xs" onclick="openEditKPIModal('${k.id}')" title="Edit">${ICO.edit}</button><button class="btn btn-ghost btn-xs" onclick="deleteKPI('${k.id}')" style="color:var(--red)" title="Delete">${ICO.trash}</button></div></td> </tr>`}).join('')}</tbody> </table></div></div></div>`;
 }
 
