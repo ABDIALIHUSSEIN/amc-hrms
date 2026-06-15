@@ -2374,19 +2374,50 @@ function checkPayrollDay(){
   }, 1200);
 }
 
+function _payrollBatchId(month){ return `PAY-${month}-${Date.now().toString(36).toUpperCase()}`; }
+function _isAdmin(){ const r=(STATE.user?.role||'').toLowerCase(); return r.includes('admin')||r.includes('super'); }
+
 function runPayrollBatch(){
   const month=STATE.payMonth;
   const emps=filteredEmps();
-  if(!emps.length){ toast('No active employees to process','warning'); return; }
+  if(!emps.length){ toast('No active employees','warning'); return; }
 
-  // ── Pre-flight validation & confirmation modal ──
-  const alreadyProcessed = DB.payroll.filter(p=>p.month===month&&p.status==='Processed').length;
-  const dupCheck = {};
-  let dupCount = 0;
-  DB.payroll.filter(p=>p.month===month).forEach(p=>{ dupCheck[p.empId]=(dupCheck[p.empId]||0)+1; });
-  Object.values(dupCheck).forEach(n=>{ if(n>1) dupCount++; });
-  const previewRows = emps.map(e=>{
-    const p=DB.payroll.find(x=>x.empId===e.id&&x.month===month)||{otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0};
+  // ── Strict validation ──
+  const errors=[];
+  const seenIds={};
+  emps.forEach(e=>{
+    if(!e.id)          errors.push(`Employee missing ID: ${e.name||'unknown'}`);
+    if(!e.name)        errors.push(`Employee ${e.id} has no name`);
+    if(!e.salary||e.salary<=0) errors.push(`${e.id} — salary missing or zero`);
+    if(seenIds[e.id])  errors.push(`Duplicate employee ID: ${e.id}`);
+    seenIds[e.id]=true;
+    // Net pay formula check: Net = (Base+Allow) - (Advance+Deductions)
+    const p=DB.payroll.find(x=>x.empId===e.id&&x.month===month)||{advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,otHours:0};
+    const c=PayrollEngine.calc(e,p);
+    const expected=Math.max(0,(c.base+c.allow)-(c.advanceDeduct+c.totalDeductions));
+    if(Math.abs(c.netPay-expected)>0.01) errors.push(`${e.id} net pay mismatch: calc ${c.netPay.toFixed(2)} vs expected ${expected.toFixed(2)}`);
+  });
+
+  if(errors.length){
+    openModal('narrow',`
+      <div class="modal-header"><span class="modal-title" style="color:var(--red)">Validation Failed — Batch Blocked</span>${closeX()}</div>
+      <div class="modal-body">
+        <div style="padding:12px 14px;background:var(--red-l);border-radius:var(--radius);margin-bottom:12px;font-size:12px;font-weight:700;color:#991B1B">${errors.length} error(s) found. Fix before processing.</div>
+        <div style="max-height:240px;overflow-y:auto;font-size:12px;font-family:var(--mono)">${errors.map(e=>`<div style="padding:4px 0;border-bottom:1px solid var(--gray-100);color:var(--red)">✗ ${esc(e)}</div>`).join('')}</div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+    DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`PAYROLL BATCH BLOCKED ${month} — ${errors.length} validation error(s): ${errors.slice(0,3).join('; ')}`,module:'Payroll',ip:'browser'});
+    return;
+  }
+
+  // ── Pre-flight summary ──
+  const batchId=_payrollBatchId(month);
+  const alreadyProcessed=DB.payroll.filter(p=>p.month===month&&p.status==='Processed').length;
+  const dupCheck={};
+  DB.payroll.filter(p=>p.month===month).forEach(p=>{dupCheck[p.empId]=(dupCheck[p.empId]||0)+1;});
+  const dupCount=Object.values(dupCheck).filter(n=>n>1).length;
+  const previewRows=emps.map(e=>{
+    const p=DB.payroll.find(x=>x.empId===e.id&&x.month===month)||{advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,otHours:0};
     return PayrollEngine.calc(e,p);
   });
   const totalGross=previewRows.reduce((s,c)=>s+c.grossEarnings,0);
@@ -2396,43 +2427,45 @@ function runPayrollBatch(){
   openModal('narrow',`
     <div class="modal-header"><span class="modal-title" style="color:var(--navy)">Payroll Batch — ${month}</span>${closeX()}</div>
     <div class="modal-body">
-      <div style="padding:14px;background:var(--blue-l);border-radius:var(--radius);margin-bottom:14px">
-        <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">PRE-FLIGHT CHECK</div>
+      <div style="padding:14px;background:var(--blue-l);border-radius:var(--radius);margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Pre-Flight — All ${emps.length} checks passed ✓</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-          <div>Employees to process:</div><div style="font-weight:800;text-align:right">${emps.length}</div>
-          <div>Total Gross:</div><div style="font-weight:800;text-align:right;color:var(--navy)">${fmtCurrency(totalGross)}</div>
+          <div>Employees:</div><div style="font-weight:800;text-align:right">${emps.length}</div>
+          <div>Gross Payroll:</div><div style="font-weight:800;text-align:right;color:var(--navy)">${fmtCurrency(totalGross)}</div>
           <div>Total Deductions:</div><div style="font-weight:800;text-align:right;color:var(--red)">${fmtCurrency(totalDeduct)}</div>
-          <div>Total Net Pay:</div><div style="font-weight:800;text-align:right;color:var(--green)">${fmtCurrency(totalNet)}</div>
+          <div>Net Payroll:</div><div style="font-weight:800;text-align:right;color:var(--green)">${fmtCurrency(totalNet)}</div>
+          <div style="color:var(--gray-400);font-size:11px">Batch ID:</div><div style="font-size:11px;font-family:var(--mono);text-align:right;color:var(--gray-500)">${batchId}</div>
         </div>
       </div>
-      ${alreadyProcessed>0?`<div style="padding:10px 14px;background:var(--amber-l);border-radius:var(--radius);font-size:12px;color:#92400E;margin-bottom:10px">⚠ ${alreadyProcessed} employee(s) already processed this month — will be re-processed with updated data.</div>`:''}
-      ${dupCount>0?`<div style="padding:10px 14px;background:var(--red-l);border-radius:var(--radius);font-size:12px;color:#991B1B;margin-bottom:10px">⚠ ${dupCount} duplicate payroll record(s) detected — batch will clean and replace all records.</div>`:''}
+      ${alreadyProcessed>0?`<div style="padding:10px 14px;background:var(--amber-l);border-radius:var(--radius);font-size:12px;color:#92400E;margin-bottom:8px">⚠ ${alreadyProcessed} already processed — will re-process with latest data.</div>`:''}
+      ${dupCount>0?`<div style="padding:10px 14px;background:var(--red-l);border-radius:var(--radius);font-size:12px;color:#991B1B;margin-bottom:8px">⚠ ${dupCount} duplicate records — batch will clean and replace.</div>`:''}
       <div style="padding:10px 14px;background:var(--gray-50);border-radius:var(--radius);font-size:12px;color:var(--gray-500)">
-        Excel will auto-download after processing for Finance.
+        After processing: payroll locked for edits. Excel auto-downloads for Finance.
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="closeModal();_execPayrollBatch()">Confirm & Process</button>
+      <button class="btn btn-primary" onclick="closeModal();_execPayrollBatch('${batchId}')">Confirm & Process</button>
     </div>`);
 }
 
-function _execPayrollBatch(){
+function _execPayrollBatch(batchId){
   const month=STATE.payMonth;
   const emps=filteredEmps();
   const batch=[];
+  const runTime=new Date().toISOString().replace('T',' ').slice(0,16);
   emps.forEach(e=>{
     let p=DB.payroll.find(x=>x.empId===e.id&&x.month===month);
-    if(!p){ p={empId:e.id,month,baseSalary:e.salary,allowance:e.allowance||0,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Processed'}; DB.payroll.push(p); }
-    else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance||0; }
+    if(!p){ p={empId:e.id,month,baseSalary:e.salary,allowance:e.allowance||0,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Processed',batchId,lockedAt:runTime}; DB.payroll.push(p); }
+    else { p.status='Processed'; p.baseSalary=e.salary; p.allowance=e.allowance||0; p.batchId=batchId; p.lockedAt=runTime; }
     batch.push(p);
   });
   if(typeof SupaWrite!=='undefined') SupaWrite.savePayrollBatch(batch);
-  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:new Date().toISOString().replace('T',' ').slice(0,16),user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`Processed payroll batch ${month} (${emps.length} employees)`,module:'Payroll',ip:'127.0.0.1'});
+  DB.auditLogs.unshift({id:DB.auditLogs.length+1,time:runTime,user:STATE.user?.initials||'SYS',userRole:STATE.user?.role||'',action:`PAYROLL BATCH SUCCESS — ${month} · BatchID: ${batchId} · ${emps.length} employees · Net: ${fmtCurrency(batch.reduce((s,p)=>{const e2=getEmp(p.empId);return s+(e2?PayrollEngine.calc(e2,p).netPay:0);},0))}`,module:'Payroll',ip:'127.0.0.1'});
   scheduleSave();
-  toast(`Payroll batch ${month} — ${emps.length} employees processed. Downloading Excel…`,'success');
+  toast(`Batch ${batchId} — ${emps.length} employees processed & locked. Downloading Excel…`,'success');
   nav('payroll');
-  setTimeout(exportPayroll, 800);
+  setTimeout(exportPayroll,800);
 }
 
 // Per-employee payroll adjustments (OT, bonus, advance, deductions) for the
@@ -2441,6 +2474,7 @@ function openPayrollEditModal(empId){
   const e=getEmp(empId); if(!e){toast('Employee not found','error');return;}
   const month=STATE.payMonth;
   const p=DB.payroll.find(x=>x.empId===empId&&x.month===month)||{otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0};
+  if(p.status==='Processed'&&!_isAdmin()){ toast('Payroll locked after processing — only Admin can edit','error'); return; }
   const maxAdv=PayrollEngine.maxAdvance(e.salary);
   openModal('narrow',`
     <div class="modal-header"><span class="modal-title">Edit Payroll — ${e.name} · ${month}</span>${closeX()}</div>
