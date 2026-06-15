@@ -5178,29 +5178,32 @@ let _saveTimer = null;
 function persistDB() {
   try {
     const snapshot = {
-      employees:            DB.employees,
-      users:                DB.users,
-      attendance:           DB.attendance,
-      leaveRequests:        DB.leaveRequests,
-      leaveBalances:        DB.leaveBalances,
-      payroll:              DB.payroll,
-      kpis:                 DB.kpis,
-      kpiTemplates:         DB.kpiTemplates,
-      salaryAdvances:       DB.salaryAdvances,
-      loans:                DB.loans,
-      bonuses:              DB.bonuses,
-      bonusRules:           DB.bonusRules,
-      notices:              DB.notices,
-      noticeAcknowledgments:DB.noticeAcknowledgments,
-      auditLogs:            (DB.auditLogs || []).slice(0, 200), // keep last 200
-      recruitment:          DB.recruitment,
-      training:             DB.training,
-      disciplinary:         DB.disciplinary,
-      departments:          DB.departments,
-      educationRecords:     DB.educationRecords,
-      notifications:        DB.notifications,
-      settings:             DB.settings,
-      savedAt:              new Date().toISOString(),
+      employees:              DB.employees,
+      users:                  DB.users,
+      attendance:             DB.attendance,
+      leaveRequests:          DB.leaveRequests,
+      leaveBalances:          DB.leaveBalances,
+      payroll:                DB.payroll,
+      kpis:                   DB.kpis,
+      kpiTemplates:           DB.kpiTemplates,
+      kpiReviews:             DB.kpiReviews,
+      tasks:                  DB.tasks,
+      salaryAdvances:         DB.salaryAdvances,
+      loans:                  DB.loans,
+      bonuses:                DB.bonuses,
+      bonusRules:             DB.bonusRules,
+      notices:                DB.notices,
+      noticeAcknowledgments:  DB.noticeAcknowledgments,
+      auditLogs:              (DB.auditLogs || []).slice(0, 200),
+      requisitions:           DB.requisitions,
+      candidates:             DB.candidates,
+      trainings:              DB.trainings,
+      disciplinaryCases:      DB.disciplinaryCases,
+      successionPlans:        DB.successionPlans,
+      departments:            DB.departments,
+      notifications:          DB.notifications,
+      settings:               DB.settings,
+      savedAt:                new Date().toISOString(),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     // Phase 2: push the document-store collections (loans, advances, bonuses,
@@ -5236,10 +5239,11 @@ function loadPersistedDB() {
     // Merge saved data into DB (saved data takes priority)
     const mergeable = [
       'employees','users','attendance','leaveRequests','leaveBalances',
-      'payroll','kpis','kpiTemplates','salaryAdvances','loans','bonuses',
-      'bonusRules','notices','noticeAcknowledgments','auditLogs',
-      'recruitment','training','disciplinary','departments',
-      'educationRecords','notifications','settings',
+      'payroll','kpis','kpiTemplates','kpiReviews','tasks',
+      'salaryAdvances','loans','bonuses','bonusRules',
+      'notices','noticeAcknowledgments','auditLogs',
+      'requisitions','candidates','trainings','disciplinaryCases',
+      'successionPlans','departments','notifications','settings',
     ];
 
     let merged = 0;
@@ -5249,6 +5253,11 @@ function loadPersistedDB() {
         merged++;
       }
     }
+
+    // Backward-compat: migrate old misnamed keys from previous saves
+    if (saved.disciplinary   && !DB.disciplinaryCases?.length) DB.disciplinaryCases = saved.disciplinary;
+    if (saved.training       && !DB.trainings?.length)         DB.trainings         = saved.training;
+    if (saved.recruitment    && !DB.requisitions?.length)      DB.requisitions      = saved.recruitment;
 
     const age = Math.round((Date.now() - new Date(saved.savedAt)) / 60000);
     console.log(`Loaded persisted DB: ${merged} collections, saved ${age}min ago`);
