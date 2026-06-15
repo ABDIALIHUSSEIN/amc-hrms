@@ -288,11 +288,15 @@ const SupaSync = {
       SUPA.select('trainings',          'order=updated_at.desc&limit=200'),
       SUPA.select('disciplinary_cases', 'order=updated_at.desc&limit=200'),
       SUPA.select('succession_plans',   'order=updated_at.desc&limit=200'),
+      SUPA.select('settings',           'limit=1'),
+      SUPA.select('guarantors',         'order=updated_at.desc&limit=500'),
+      SUPA.select('bonus_rules',        'order=updated_at.desc&limit=200'),
     ]);
 
     const [subs, depts, emps, users, leaveReqs, leaveBals,
            kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att,
-           loans, salAdv, bonuses, reqs, cands, trainings, discCases, succPlans] = loads.map(r => r.value || []);
+           loans, salAdv, bonuses, reqs, cands, trainings, discCases, succPlans,
+           settingsRows, guarantorRows, bonusRuleRows] = loads.map(r => r.value || []);
 
     if (subs?.length)   DB.subsidiaries   = subs;
     if (depts?.length)  DB.departments    = depts.map(d => ({ ...d, sub: d.subsidiary_id, head: d.head_employee_id }));
@@ -426,7 +430,10 @@ const SupaSync = {
     if (cands?.length)     DB.candidates        = docMap(cands);
     if (trainings?.length) DB.trainings         = docMap(trainings);
     if (discCases?.length) DB.disciplinaryCases = docMap(discCases);
-    if (succPlans?.length) DB.successionPlans   = docMap(succPlans);
+    if (succPlans?.length)    DB.successionPlans   = docMap(succPlans);
+    if (settingsRows?.length) DB.settings          = settingsRows[0]?.doc || DB.settings || {};
+    if (guarantorRows?.length) DB.guarantors        = docMap(guarantorRows);
+    if (bonusRuleRows?.length) DB.bonusRules        = docMap(bonusRuleRows);
 
     // ── Phase 2 document-store collections (notices, etc.) ──
     await this.loadDocs();
@@ -794,8 +801,7 @@ const SupaWrite = {
       });
     } catch(e) { /* silent */ }
   },
-  // Generic doc-store upsert for loans, salary_advances, bonuses,
-  // requisitions, candidates, trainings, disciplinary_cases, succession_plans
+  // Generic doc-store upsert for all { id, doc } tables
   async saveDoc2(table, record) {
     if (!SupaSync.connected) return;
     try { await SUPA.upsert(table, { id: record.id, doc: record }, 'id'); }
@@ -805,6 +811,12 @@ const SupaWrite = {
     if (!SupaSync.connected) return;
     try { await SUPA.delete(table, `id=eq.${encodeURIComponent(id)}`); }
     catch(e) { console.warn(`SupaWrite.deleteDoc2(${table}):`, e.message); }
+  },
+  // Settings: single global row keyed 'global'
+  async saveSettings(s) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.upsert('settings', { id: 'global', doc: s }, 'id'); }
+    catch(e) { console.warn('SupaWrite.saveSettings:', e.message); }
   },
 };
 

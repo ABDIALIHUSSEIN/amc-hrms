@@ -2919,10 +2919,11 @@ function settingsLeavePolicy(){
 }
 function saveLeavePolicy(){
   if (!DB.settings) DB.settings = {};
-  DB.settings.annual_leave_days = parseInt(document.getElementById('lp_annual').value)||30;
-  DB.settings.sick_leave_days   = parseInt(document.getElementById('lp_sick').value)||7;
+  DB.settings.annual_leave_days    = parseInt(document.getElementById('lp_annual').value)||30;
+  DB.settings.sick_leave_days      = parseInt(document.getElementById('lp_sick').value)||7;
   DB.settings.maternity_leave_days = parseInt(document.getElementById('lp_maternity').value)||90;
   DB.settings.paternity_leave_days = parseInt(document.getElementById('lp_paternity').value)||7;
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveSettings(DB.settings);
   scheduleSave();
   toast('Leave policy saved','success');
 }
@@ -4199,7 +4200,10 @@ function updateBonusAmountField() {
 }
 
 function toggleBonusRule(id) {
-  const r = (DB.bonusRules||[]).find(x=>x.id===id); if (r) r.active = !r.active;
+  const r = (DB.bonusRules||[]).find(x=>x.id===id); if (!r) return;
+  r.active = !r.active;
+  if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('bonus_rules', r);
+  scheduleSave();
   toast('Rule updated', 'success'); openBonusRulesModal();
 }
 
