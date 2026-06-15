@@ -675,6 +675,23 @@ const SupaWrite = {
       if (items.length) await SUPA.insert('kpi_template_items', items);
     } catch(e) { console.warn('SupaWrite.saveKPITemplate:', e.message); }
   },
+  async saveLeaveBalance(empId, lb) {
+    if (!SupaSync.connected) return;
+    try {
+      const annual = lb.annual || (DB.settings?.annual_leave_days || 30);
+      const sick   = lb.sick   || (DB.settings?.sick_leave_days   || 7);
+      await Promise.all([
+        SUPA.upsert('leave_balances', {
+          employee_id: empId, leave_type_code: 'ANNUAL',
+          entitled_days: annual, used_days: lb.used_annual || 0,
+        }, 'employee_id,leave_type_code'),
+        SUPA.upsert('leave_balances', {
+          employee_id: empId, leave_type_code: 'SICK',
+          entitled_days: sick, used_days: lb.used_sick || 0,
+        }, 'employee_id,leave_type_code'),
+      ]);
+    } catch(e) { console.warn('SupaWrite.saveLeaveBalance:', e.message); }
+  },
   async savePayroll(p) {
     if (!SupaSync.connected) return;
     try {
