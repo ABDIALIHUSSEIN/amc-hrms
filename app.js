@@ -1,5 +1,5 @@
 /* ============================================================
-   AMC HRMS v2.0 — APPLICATION ENGINE
+   AMC HRMS v2.1 — APPLICATION ENGINE
    Asal Media Corporation
    ============================================================ */
 'use strict';
@@ -703,15 +703,17 @@ function exportPayroll() {
   const month = STATE.payMonth || new Date().toISOString().slice(0,7);
   const emps = filteredEmps();
   const rows = emps.map(e => {
-    const p = DB.payroll.find(x => x.empId===e.id && x.month===month) || { empId:e.id, month, baseSalary:e.salary, allowance:e.allowance||0, otHours:0, advance:0, lateDeduction:0, absentDeduction:0, eidBonus:0, status:'Pending' };
+    const p = DB.payroll.find(x => x.empId===e.id && x.month===month);
+    if (!p || p.status !== 'Processed') return null;
     const c = PayrollEngine.calc(e, p);
     return { 'ID': e.id, 'Name': e.name, 'Subsidiary': getSubName(e.sub), 'Department': getDeptName(e.dept),
       'Base Salary': c.base, 'Allowance': c.allow, 'OT Hours': p.otHours||0, 'OT Pay': c.otPay,
       'Eid Bonus': c.eidBonus, 'Gross': c.grossEarnings,
       'Advance': c.advanceDeduct, 'Loan Deduction': c.loanDeduct,
       'Total Deductions': c.totalDeductions, 'Net Pay': c.netPay,
-      'Gratuity': PayrollEngine.calcGratuity(c.base), 'Status': p.status || 'Pending', 'Month': month };
-  });
+      'Gratuity': PayrollEngine.calcGratuity(c.base), 'Status': p.status, 'Month': month };
+  }).filter(Boolean);
+  if (!rows.length) { toast('No processed payroll records for '+month,'warning'); return; }
   exportToExcel(rows, 'AMC_Payroll_'+month, 'Payroll');
 }
 
