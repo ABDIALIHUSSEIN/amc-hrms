@@ -4391,6 +4391,7 @@ PAGES.advances = function(wrap) {
             <button style="height:38px;padding:0 16px;border-radius:10px;border:none;background:#DBEAFE;color:#1E40AF;cursor:pointer;font-size:12px;font-weight:700" title="Mark as Paid" onclick="markAdvancePaid('${a.id}')"><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#065F46' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg> Mark Paid</button>` : ''}
           ${a.status==='Paid' ? `<span style="color:#065F46;font-size:12px;font-weight:700">Paid</span>` : ''}
           ${a.status==='Rejected' ? `<span style="color:#991B1B;font-size:12px;font-weight:700">Rejected</span>` : ''}
+          ${['Approved','Rejected'].includes(a.status) && canApproveFinance() ? `<button class="btn btn-outline btn-sm" onclick="rollbackAdvance('${a.id}')" title="Roll back to Pending">Rollback</button>` : ''}
           </td> </tr>`;
       }).join('') : '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--gray-400)">No advance requests</td></tr>'}</tbody> </table></div></div> </div>`;
 };
@@ -4473,6 +4474,21 @@ function markAdvancePaid(id) {
   scheduleSave();
 }
 
+function rollbackAdvance(id) {
+  const a = (DB.salaryAdvances||[]).find(x=>x.id===id); if (!a) return;
+  if (!['Approved','Rejected'].includes(a.status)) { toast('Only Approved or Rejected advances can be rolled back', 'error'); return; }
+  if (!confirm(`Roll back this ${a.status.toLowerCase()} advance to Pending?`)) return;
+  if (a.status === 'Approved') {
+    const pr = DB.payroll.find(p => p.empId === a.empId && p.month === a.deductMonth);
+    if (pr) pr.advance = Math.max(0, (pr.advance || 0) - a.amount);
+  }
+  const prevStatus = a.status;
+  a.status = 'Pending'; a.approvedBy = ''; a.approvedAt = ''; a.notes = '';
+  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Rolled back advance (${prevStatus} → Pending): ${getEmp(a.empId)?.name} — ${fmtCurrency(a.amount)}`, module:'Advances', ip:'browser' });
+  toast('Advance rolled back to Pending', 'warning'); nav('advances');
+  scheduleSave();
+}
+
 
 /* ════════════════════════════════════════════════════════════
    MODULE 3 — LOAN MANAGEMENT
@@ -4484,18 +4500,23 @@ PAGES.loans = function(wrap) {
     : (DB.loans||[]).filter(l => l.empId === getCurrentEmployee()?.id);
 
   const active    = loans.filter(l=>l.status==='Active');
+  const pendingCnt= loans.filter(l=>l.status==='Pending').length;
   const totalOut  = active.reduce((s,l)=>s+(l.principal-l.amountPaid),0);
   const monthlyDue= active.reduce((s,l)=>s+(l.monthlyInstallment||0),0);
 
   wrap.innerHTML = `<div class="page"> <div class="page-header"> <div><h1 class="page-title">Loan Management</h1><div class="page-sub">${isMgr ? 'All employee loans' : 'My loans'}</div></div> ${isMgr ? `<button class="btn btn-primary" onclick="openCreateLoanModal()">+ Issue Loan</button>` :
                 `<button class="btn btn-primary" onclick="openLoanApplicationModal()">Apply for Loan</button>`}
-    </div> <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px"> <div class="stat-card red"><div class="stat-val">${fmtCurrency(totalOut)}</div><div class="stat-lbl">Total Outstanding</div></div> <div class="stat-card amber"><div class="stat-val">${fmtCurrency(monthlyDue)}</div><div class="stat-lbl">Monthly Deductions</div></div> <div class="stat-card green"><div class="stat-val">${active.length}</div><div class="stat-lbl">Active Loans</div></div> <div class="stat-card blue"><div class="stat-val">${loans.filter(l=>l.status==='Completed').length}</div><div class="stat-lbl">Completed</div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr> ${isMgr ? '<th>Employee</th>' : ''}
+    </div> <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px"> <div class="stat-card amber"><div class="stat-val">${pendingCnt}</div><div class="stat-lbl">Pending Approval</div></div> <div class="stat-card red"><div class="stat-val">${fmtCurrency(totalOut)}</div><div class="stat-lbl">Total Outstanding</div></div> <div class="stat-card amber"><div class="stat-val">${fmtCurrency(monthlyDue)}</div><div class="stat-lbl">Monthly Deductions</div></div> <div class="stat-card green"><div class="stat-val">${active.length}</div><div class="stat-lbl">Active Loans</div></div> <div class="stat-card blue"><div class="stat-val">${loans.filter(l=>l.status==='Completed').length}</div><div class="stat-lbl">Completed</div></div> </div> <div class="card"><div class="table-wrap"><table class="table"> <thead><tr> ${isMgr ? '<th>Employee</th>' : ''}
         <th>Principal</th><th>Monthly</th><th>Remaining</th><th>Progress</th> <th>Rate</th><th>Period</th><th>Purpose</th><th>Status</th><th>Actions</th> </tr></thead> <tbody>${loans.length ? loans.map(l => {
         const emp   = getEmp(l.empId);
         const remain= Math.max(0, l.principal - l.amountPaid);
         const pct   = Math.round(l.amountPaid / l.totalRepayable * 100);
         return `<tr> ${isMgr ? `<td><div style="font-weight:700">${emp?.name||'—'}</div><div style="font-size:11px;color:var(--gray-400)">${l.empId}</div></td>` : ''}
-          <td style="font-family:var(--mono);font-weight:700">${fmtCurrency(l.principal)}</td> <td style="font-family:var(--mono);color:var(--amber)">${fmtCurrency(l.monthlyInstallment)}</td> <td style="font-family:var(--mono);color:var(--red);font-weight:700">${fmtCurrency(remain)}</td> <td style="min-width:100px"> <div style="background:var(--gray-100);border-radius:99px;height:6px;overflow:hidden"> <div style="height:100%;background:${pct>=100?'var(--green)':'var(--blue)'};border-radius:99px;width:${Math.min(100,pct)}%"></div> </div> <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${pct}% paid</div> </td> <td style="font-size:12px">${l.interestRate}%</td> <td style="font-size:12px">${l.months}mo</td> <td style="font-size:12px;max-width:140px">${l.purpose}</td> <td>${finBadge(l.status)}</td> <td> <button class="btn btn-outline btn-sm" onclick="openLoanDetail('${l.id}')">Details</button> ${l.status==='Active' && canApproveFinance() ? `<button class="btn btn-outline btn-sm" onclick="recordLoanPayment('${l.id}')" style="color:var(--green)">Record Payment</button>` : ''}
+          <td style="font-family:var(--mono);font-weight:700">${fmtCurrency(l.principal)}</td> <td style="font-family:var(--mono);color:var(--amber)">${fmtCurrency(l.monthlyInstallment)}</td> <td style="font-family:var(--mono);color:var(--red);font-weight:700">${fmtCurrency(remain)}</td> <td style="min-width:100px"> <div style="background:var(--gray-100);border-radius:99px;height:6px;overflow:hidden"> <div style="height:100%;background:${pct>=100?'var(--green)':'var(--blue)'};border-radius:99px;width:${Math.min(100,pct)}%"></div> </div> <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${pct}% paid</div> </td> <td style="font-size:12px">${l.interestRate}%</td> <td style="font-size:12px">${l.months}mo</td> <td style="font-size:12px;max-width:140px">${l.purpose}</td> <td>${finBadge(l.status)}</td> <td style="display:flex;gap:6px;flex-wrap:wrap"> <button class="btn btn-outline btn-sm" onclick="openLoanDetail('${l.id}')">Details</button> ${l.status==='Pending' && isMgr ? `
+            <button style="width:38px;height:38px;border-radius:10px;border:none;background:#D1FAE5;cursor:pointer;display:inline-flex;align-items:center;justify-content:center" title="Approve" onclick="approveLoan('${l.id}')"><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#065F46' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg></button>
+            <button style="width:38px;height:38px;border-radius:10px;border:none;background:#FEE2E2;cursor:pointer;display:inline-flex;align-items:center;justify-content:center" title="Reject" onclick="rejectLoan('${l.id}')"><svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='#991B1B' stroke-width='2.5' stroke-linecap='round'><line x1='18' y1='6' x2='6' y2='18'/><line x1='6' y1='6' x2='18' y2='18'/></svg></button>` : ''}
+          ${l.status==='Active' && canApproveFinance() ? `<button class="btn btn-outline btn-sm" onclick="recordLoanPayment('${l.id}')" style="color:var(--green)">Record Payment</button>` : ''}
+          ${['Active','Rejected'].includes(l.status) && canApproveFinance() && l.amountPaid===0 ? `<button class="btn btn-outline btn-sm" onclick="rollbackLoan('${l.id}')" title="Roll back to Pending">Rollback</button>` : ''}
           </td> </tr>`;
       }).join('') : '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--gray-400)">No loans found</td></tr>'}</tbody> </table></div></div> </div>`;
 };
@@ -4559,6 +4580,35 @@ function saveLoan() {
   scheduleSave();
 }
 
+function approveLoan(id) {
+  const l = (DB.loans||[]).find(x=>x.id===id); if (!l) return;
+  l.status = 'Active'; l.approvedBy = STATE.user?.email; l.approvedAt = new Date().toISOString().split('T')[0];
+  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Approved loan: ${getEmp(l.empId)?.name} — ${fmtCurrency(l.principal)}`, module:'Loans', ip:'browser' });
+  toast('Loan approved', 'success'); nav('loans');
+  scheduleSave();
+}
+
+function rejectLoan(id) {
+  const reason = prompt('Rejection reason:'); if (reason === null) return;
+  const l = (DB.loans||[]).find(x=>x.id===id); if (!l) return;
+  l.status = 'Rejected'; l.notes = reason; l.approvedBy = STATE.user?.email; l.approvedAt = new Date().toISOString().split('T')[0];
+  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Rejected loan: ${getEmp(l.empId)?.name} — ${fmtCurrency(l.principal)}`, module:'Loans', ip:'browser' });
+  toast('Loan rejected', 'warning'); nav('loans');
+  scheduleSave();
+}
+
+function rollbackLoan(id) {
+  const l = (DB.loans||[]).find(x=>x.id===id); if (!l) return;
+  if (!['Active','Rejected'].includes(l.status)) { toast('Only Active or Rejected loans can be rolled back', 'error'); return; }
+  if (l.amountPaid > 0) { toast('Cannot roll back — repayments have already been recorded against this loan', 'error'); return; }
+  if (!confirm(`Roll back this ${l.status.toLowerCase()} loan to Pending?`)) return;
+  const prevStatus = l.status;
+  l.status = 'Pending'; l.approvedBy = ''; l.approvedAt = ''; l.notes = '';
+  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:STATE.user?.initials||'SYS', userRole:STATE.role, action:`Rolled back loan (${prevStatus} → Pending): ${getEmp(l.empId)?.name} — ${fmtCurrency(l.principal)}`, module:'Loans', ip:'browser' });
+  toast('Loan rolled back to Pending', 'warning'); nav('loans');
+  scheduleSave();
+}
+
 function openLoanDetail(loanId) {
   const l = (DB.loans||[]).find(x=>x.id===loanId); if (!l) return;
   const emp    = getEmp(l.empId);
@@ -4619,7 +4669,7 @@ function submitLoanApplication(empId) {
   startDate.setDate(1); startDate.setMonth(startDate.getMonth()+1);
   const endDate   = new Date(startDate);
   endDate.setMonth(endDate.getMonth() + months);
-  const loan = { id:'LON'+String(DB.loans.length+1).padStart(3,'0'), empId, principal:amount, months, interestRate:0, monthlyInstallment:Math.round(monthly*100)/100, totalRepayable:Math.round(monthly*months*100)/100, amountPaid:0, status:'Active', purpose, startDate:startDate.toISOString().split('T')[0], endDate:endDate.toISOString().split('T')[0], approvedBy:'HR Pending Review', history:[] };
+  const loan = { id:'LON'+String(DB.loans.length+1).padStart(3,'0'), empId, principal:amount, months, interestRate:0, monthlyInstallment:Math.round(monthly*100)/100, totalRepayable:Math.round(monthly*months*100)/100, amountPaid:0, status:'Pending', purpose, startDate:startDate.toISOString().split('T')[0], endDate:endDate.toISOString().split('T')[0], approvedBy:'', approvedAt:'', notes:'', history:[] };
   if (!DB.loans) DB.loans = [];
   DB.loans.unshift(loan);
   if(typeof SupaWrite!=='undefined') SupaWrite.saveDoc2('loans',loan);
@@ -6091,11 +6141,13 @@ function submitSelfLoan(empId) {
     monthlyInstallment: Math.round(monthly * 100) / 100,
     totalRepayable:     Math.round(monthly * months * 100) / 100,
     amountPaid:         0,
-    status:             'Active',
+    status:             'Pending',
     purpose:            purpose,
     startDate:          start.toISOString().split('T')[0],
     endDate:            end.toISOString().split('T')[0],
-    approvedBy:         'Pending HR Approval',
+    approvedBy:         '',
+    approvedAt:         '',
+    notes:              '',
     history:            [],
   };
   DB.loans.unshift(loan);
