@@ -151,14 +151,17 @@ Deno.serve(async (req) => {
     if (!serviceAccount.client_email) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
 
     const token = await getGoogleToken(serviceAccount, [
-      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/drive",
     ]);
 
     const year = new Date().getFullYear().toString();
     const monthNum = String(new Date().getMonth() + 1).padStart(2, "0");
     const monthName = new Date().toLocaleString("en-US", { month: "long" });
 
-    const rootId = await findOrCreateFolder(token, "HRM_BACKUPS", null);
+    // DRIVE_FOLDER_ID = user's shared HRM_BACKUPS folder (personal Drive)
+    // If not set, create HRM_BACKUPS in the service account's own Drive
+    const sharedRootId = Deno.env.get("DRIVE_FOLDER_ID") || null;
+    const rootId = sharedRootId ?? await findOrCreateFolder(token, "HRM_BACKUPS", null);
     const yearId = await findOrCreateFolder(token, year, rootId);
     const monthId = await findOrCreateFolder(token, `${monthNum}-${monthName}`, yearId);
 
