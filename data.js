@@ -14,6 +14,7 @@ subsidiaries: [
   { id:'asal_tv', name:'Asal TV',           code:'ATV', color:'#001B44', location:'Mogadishu', headcount:98,  sector:'Television' },
   { id:'masrax',  name:'Masrax Production', code:'MPR', color:'#8B0000', location:'Mogadishu', headcount:74,  sector:'Film & Production' },
   { id:'nasiye',  name:'Nasiye',            code:'NSY', color:'#0D6E3F', location:'Mogadishu', headcount:55,  sector:'News & Media' },
+  { id:'asal_media', name:'Asal Media Corporation', code:'AMC', color:'#5B21B6', location:'Mogadishu', headcount:0, sector:'Corporate / Holding' },
 ],
 
 departments: [
@@ -135,8 +136,8 @@ users: [],
 
   /* ── BONUS RULES ── */
   bonusRules: [
-    { id:'BNR001', name:'Annual Performance Bonus', type:'performance', value:0, cycle:'yearly', applyTo:'all', subsidiaries:['jiil','asal_tv','masrax','nasiye'], active:true, description:'KPI-based: Outstanding=20%, Exceeds=15%, Meets=10%, Improvement=5%, Unsatisfactory=0%' },
-    { id:'BNR002', name:'Eid Al-Adha Bonus',        type:'fixed',       value:1, cycle:'yearly', applyTo:'all', subsidiaries:['jiil','asal_tv','masrax','nasiye'], active:true, description:'One month salary as Eid bonus' },
+    { id:'BNR001', name:'Annual Performance Bonus', type:'performance', value:0, cycle:'yearly', applyTo:'all', subsidiaries:['jiil','asal_tv','masrax','nasiye','asal_media'], active:true, description:'KPI-based: Outstanding=20%, Exceeds=15%, Meets=10%, Improvement=5%, Unsatisfactory=0%' },
+    { id:'BNR002', name:'Eid Al-Adha Bonus',        type:'fixed',       value:1, cycle:'yearly', applyTo:'all', subsidiaries:['jiil','asal_tv','masrax','nasiye','asal_media'], active:true, description:'One month salary as Eid bonus' },
   ],
 
   /* ── BONUS RECORDS ── */
