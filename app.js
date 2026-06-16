@@ -2366,7 +2366,7 @@ PAGES.payroll = function(wrap) {
   // defaults to Pending and is computed live from the employee's current salary.
   const rows=filteredEmps().map(e=>{
     const p=DB.payroll.find(x=>x.empId===e.id&&(x.month===STATE.payMonth||!x.month))
-      ||{empId:e.id,month:STATE.payMonth,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Pending'};
+      ||{empId:e.id,month:STATE.payMonth,baseSalary:e.salary||0,allowance:e.allowance||0,otHours:0,advance:0,lateDeduction:0,absentDeduction:0,eidBonus:0,status:'Pending'};
     return {...p,...PayrollEngine.calc(e,p),empName:e.name,empSub:getSubName(e.sub),empDept:getDeptName(e.dept),empId:e.id,status:p.status||'Pending'};
   });
   const sg=rows.reduce((s,r)=>s+r.grossEarnings,0),sn=rows.reduce((s,r)=>s+r.netPay,0),sd=rows.reduce((s,r)=>s+r.totalDeductions,0),st=rows.reduce((s,r)=>s+r.tax,0);
