@@ -8,6 +8,7 @@
 .DS_Store
 .gstack/
 node_modules/
+supabase/.temp/
 
 # Backups
 supabase_schema_v1_old.sql

@@ -102,11 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Escape closes modal
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
-  });
-
   // ── SUPABASE ──
   // Data is loaded after authentication (see completeLogin), so the user only
   // ever sees rows their JWT + RLS policies permit. No pre-login data fetch.
@@ -594,6 +589,7 @@ function openModal(size, html) {
   bx.className = `m-box open${size === 'wide' ? ' wide' : size === 'narrow' ? ' narrow' : size === 'xl' ? ' xl' : ''}`;
   bx.innerHTML = html;
   ov.classList.add('open');
+  wireEmpPickers(bx);
 }
 function closeModal() {
   const bx = document.getElementById('mBox');
@@ -601,11 +597,52 @@ function closeModal() {
   if (bx) bx.classList.remove('open');
   if (ov) ov.classList.remove('open');
 }
-function handleOverlayClick(e) {
-  if (e.target === document.getElementById('mOverlay')) closeModal();
-}
 function closeX() {
   return `<button class="modal-close" onclick="closeModal()" title="Close">${ICO.x}</button>`;
+}
+
+/* ─────────────────────────────────────────────
+   SEARCHABLE EMPLOYEE PICKER
+   Wraps a hidden <select> with a type-to-filter input.
+   Markup contract: <div class="emp-picker"><input class="emp-picker-input">
+   <div class="emp-picker-list"></div><select>...</select></div>
+───────────────────────────────────────────── */
+function wireEmpPickers(root) {
+  root.querySelectorAll('.emp-picker').forEach(wrap => {
+    const input  = wrap.querySelector('.emp-picker-input');
+    const list   = wrap.querySelector('.emp-picker-list');
+    const select = wrap.querySelector('select');
+    if (!input || !list || !select) return;
+
+    const opts = Array.from(select.options).filter(o => o.value);
+
+    function syncInputToSelection() {
+      const sel = select.options[select.selectedIndex];
+      input.value = (sel && sel.value) ? sel.textContent : '';
+    }
+    function render(filter) {
+      const q = filter.trim().toLowerCase();
+      const matches = q ? opts.filter(o => o.textContent.toLowerCase().includes(q)) : opts;
+      list.innerHTML = matches.length
+        ? matches.slice(0, 50).map(o => `<div class="emp-picker-item" data-value="${o.value}">${esc(o.textContent)}</div>`).join('')
+        : `<div class="emp-picker-empty">No matches</div>`;
+      list.style.display = 'block';
+    }
+
+    syncInputToSelection();
+    input.addEventListener('focus', () => { input.select(); render(''); });
+    input.addEventListener('input', () => render(input.value));
+    input.addEventListener('blur', () => setTimeout(() => { list.style.display = 'none'; syncInputToSelection(); }, 150));
+    list.addEventListener('mousedown', e => {
+      const item = e.target.closest('.emp-picker-item');
+      if (!item) return;
+      e.preventDefault();
+      select.value = item.dataset.value;
+      input.value = item.textContent;
+      list.style.display = 'none';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
 }
 
 /* ─────────────────────────────────────────────
@@ -4363,8 +4400,8 @@ function openAdvanceRequestModal(empId = '') {
   const selfService = isSelfServiceRole();
 
   openModal('narrow', `
-    <div class="modal-header"><span class="modal-title">Request Salary Advance</span>${closeX()}</div> <div class="modal-body"> ${!selfService ? `<div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="adv_emp" onchange="updateAdvanceLimit()"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}" ${emp?.id===e.id?'selected':''}>${e.name} (${e.id})</option>`).join('')}
-        </select> </div>` : `<input type="hidden" id="adv_emp" value="${emp?.id||''}">`}
+    <div class="modal-header"><span class="modal-title">Request Salary Advance</span>${closeX()}</div> <div class="modal-body"> ${!selfService ? `<div class="form-group"><label class="form-label required">Employee</label> <div class="emp-picker"><input type="text" class="form-control emp-picker-input" placeholder="Search employee…" autocomplete="off"><div class="emp-picker-list"></div><select class="form-control" id="adv_emp" onchange="updateAdvanceLimit()" style="display:none"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}" ${emp?.id===e.id?'selected':''}>${e.name} (${e.id})</option>`).join('')}
+        </select></div> </div>` : `<input type="hidden" id="adv_emp" value="${emp?.id||''}">`}
       <div id="adv_limit_info" style="background:var(--blue-l);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--blue);margin-bottom:14px;display:${emp?'block':'none'}"> ${emp ? `Monthly Salary: <strong>${fmtCurrency(emp.salary)}</strong> · Max Advance (50%): <strong>${fmtCurrency(PayrollEngine.maxAdvance(emp.salary))}</strong>` : ''}
       </div> <div class="form-group"><label class="form-label required">Advance Amount (USD)</label> <input class="form-control" id="adv_amount" type="number" min="1" placeholder="e.g. 500"> </div> <div class="form-group"><label class="form-label required">Deduction Month</label> <input class="form-control" id="adv_month" type="month" value="${new Date().toISOString().slice(0,7)}"> </div> <div class="form-group"><label class="form-label required">Reason</label> <textarea class="form-control" id="adv_reason" rows="3" placeholder="Explain the reason for advance…"></textarea> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="submitAdvanceRequest()">Submit Request</button> </div>`);
 }
@@ -4465,8 +4502,8 @@ PAGES.loans = function(wrap) {
 
 function openCreateLoanModal() {
   openModal('wide', `
-    <div class="modal-header"><span class="modal-title">Issue Employee Loan</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="ln_emp"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}
-          </select> </div> <div class="form-group"><label class="form-label required">Loan Purpose</label> <input class="form-control" id="ln_purpose" placeholder="e.g. Medical, Education, Car purchase"> </div> </div> <div class="form-row cols-3"> <div class="form-group"><label class="form-label required">Principal Amount (USD)</label> <input class="form-control" id="ln_amount" type="number" min="1" oninput="calcLoanInstallment()" placeholder="e.g. 5000"> </div> <div class="form-group"><label class="form-label required">Repayment Period (months)</label> <input class="form-control" id="ln_months" type="number" min="1" max="36" oninput="calcLoanInstallment()" placeholder="e.g. 12" value="12"> </div> <div class="form-group"><label class="form-label">Interest Rate (% per year, 0 = none)</label> <input class="form-control" id="ln_rate" type="number" min="0" max="30" step="0.5" oninput="calcLoanInstallment()" value="0"> </div> </div> <div id="ln_calc_result" style="background:var(--navy);color:white;border-radius:var(--radius);padding:14px 18px;margin-bottom:14px;display:none"> <div style="display:flex;gap:24px;flex-wrap:wrap"> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Monthly Payment</div> <div id="ln_monthly" style="font-size:22px;font-weight:900;color:var(--gold)">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Total Repayable</div> <div id="ln_total"   style="font-size:22px;font-weight:900;color:white">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Total Interest</div> <div id="ln_interest" style="font-size:22px;font-weight:900;color:var(--amber)">—</div></div> </div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Start Date</label> <input class="form-control" id="ln_start" type="date" value="${new Date().toISOString().split('T')[0]}"> </div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveLoan()">Issue Loan</button> </div>`);
+    <div class="modal-header"><span class="modal-title">Issue Employee Loan</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <div class="emp-picker"><input type="text" class="form-control emp-picker-input" placeholder="Search employee…" autocomplete="off"><div class="emp-picker-list"></div><select class="form-control" id="ln_emp" style="display:none"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('')}
+          </select></div> </div> <div class="form-group"><label class="form-label required">Loan Purpose</label> <input class="form-control" id="ln_purpose" placeholder="e.g. Medical, Education, Car purchase"> </div> </div> <div class="form-row cols-3"> <div class="form-group"><label class="form-label required">Principal Amount (USD)</label> <input class="form-control" id="ln_amount" type="number" min="1" oninput="calcLoanInstallment()" placeholder="e.g. 5000"> </div> <div class="form-group"><label class="form-label required">Repayment Period (months)</label> <input class="form-control" id="ln_months" type="number" min="1" max="36" oninput="calcLoanInstallment()" placeholder="e.g. 12" value="12"> </div> <div class="form-group"><label class="form-label">Interest Rate (% per year, 0 = none)</label> <input class="form-control" id="ln_rate" type="number" min="0" max="30" step="0.5" oninput="calcLoanInstallment()" value="0"> </div> </div> <div id="ln_calc_result" style="background:var(--navy);color:white;border-radius:var(--radius);padding:14px 18px;margin-bottom:14px;display:none"> <div style="display:flex;gap:24px;flex-wrap:wrap"> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Monthly Payment</div> <div id="ln_monthly" style="font-size:22px;font-weight:900;color:var(--gold)">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Total Repayable</div> <div id="ln_total"   style="font-size:22px;font-weight:900;color:white">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px">Total Interest</div> <div id="ln_interest" style="font-size:22px;font-weight:900;color:var(--amber)">—</div></div> </div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Start Date</label> <input class="form-control" id="ln_start" type="date" value="${new Date().toISOString().split('T')[0]}"> </div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveLoan()">Issue Loan</button> </div>`);
 }
 
 function calcLoanInstallment() {
@@ -4965,8 +5002,8 @@ function renderBonusList() {
 
 function openCreateBonusModal() {
   openModal('wide', `
-    <div class="modal-header"><span class="modal-title">Create Bonus Record</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <select class="form-control" id="bn_emp" onchange="updateBonusCalc()"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name} (${e.id}) — ${getSubName(e.sub)}</option>`).join('')}
-          </select> </div> <div class="form-group"><label class="form-label required">Performance Rating</label> <select class="form-control" id="bn_rating" onchange="updateBonusCalc()"> <option value="">Select rating…</option> ${Object.keys(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Fully Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(r=>`<option value="${r}">${r} (${((PayrollEngine.BONUS_RATINGS||{})[r]||0)*100}%)</option>`).join('')}
+    <div class="modal-header"><span class="modal-title">Create Bonus Record</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label> <div class="emp-picker"><input type="text" class="form-control emp-picker-input" placeholder="Search employee…" autocomplete="off"><div class="emp-picker-list"></div><select class="form-control" id="bn_emp" onchange="updateBonusCalc()" style="display:none"> <option value="">Select employee…</option> ${DB.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name} (${e.id}) — ${getSubName(e.sub)}</option>`).join('')}
+          </select></div> </div> <div class="form-group"><label class="form-label required">Performance Rating</label> <select class="form-control" id="bn_rating" onchange="updateBonusCalc()"> <option value="">Select rating…</option> ${Object.keys(PayrollEngine.BONUS_RATINGS||{Outstanding:.2,'Exceeds Expectations':.15,'Fully Meets Expectations':.1,'Needs Improvement':.05,Unsatisfactory:0}).map(r=>`<option value="${r}">${r} (${((PayrollEngine.BONUS_RATINGS||{})[r]||0)*100}%)</option>`).join('')}
           </select> </div> </div> <div id="bn_calc_box" style="display:none;background:var(--navy);color:white;border-radius:var(--radius);padding:14px 18px;margin-bottom:14px"> <div style="display:flex;gap:24px;flex-wrap:wrap"> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Annual Salary</div><div id="bn_annual" style="font-size:18px;font-weight:900;color:white">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Bonus %</div><div id="bn_pct" style="font-size:18px;font-weight:900;color:var(--gold)">—</div></div> <div><div style="font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase">Bonus Amount</div><div id="bn_amount" style="font-size:22px;font-weight:900;color:#86EFAC">—</div></div> </div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Cycle</label> <input class="form-control" id="bn_cycle" value="ANNUAL-${new Date().getFullYear()}" placeholder="ANNUAL-2026"> </div> <div class="form-group"><label class="form-label required">Pay in Month</label> <input class="form-control" id="bn_month" type="month" value="${new Date().getFullYear()}-12"> </div> </div> <div class="form-group"><label class="form-label">Notes</label> <input class="form-control" id="bn_desc" placeholder="Optional notes…"> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveBonus()">Create Bonus</button> </div>`);
 }
 

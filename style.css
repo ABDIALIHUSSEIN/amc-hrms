@@ -374,6 +374,11 @@ svg { flex-shrink: 0; }
 .form-control::placeholder { color: var(--gray-400); }
 textarea.form-control { min-height: 80px; resize: vertical; }
 select.form-control { cursor: pointer; }
+.emp-picker { position: relative; }
+.emp-picker-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow-xl); z-index: 20; max-height: 220px; overflow-y: auto; }
+.emp-picker-item { padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.emp-picker-item:hover { background: var(--gray-50); }
+.emp-picker-empty { padding: 8px 12px; font-size: 13px; color: var(--gray-400); }
 .form-row { display: grid; gap: 12px; margin-bottom: 14px; }
 .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
 .form-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
