@@ -85,12 +85,7 @@ const SupaSync = {
       console.warn('Supabase unavailable:', err.message);
       this.connected = false;
       this.mode = 'local';
-      if (err.message.includes('domain restriction') || err.message.includes('allowlist')) {
-        toast('Add your domain to Supabase allowed origins to enable live sync', 'warning');
-        showDomainHelp();
-      } else {
-        toast('Running in offline mode — changes not synced to cloud', 'warning');
-      }
+      toast('Running in offline mode — changes not synced to cloud', 'warning');
     } finally {
       this.loading = false;
       updateSupaStatus(this.connected ? 'connected' : 'offline');
