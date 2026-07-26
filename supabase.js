@@ -430,3 +430,60 @@ function hideLoadingBanner() {
   const b = document.getElementById('supaBanner');
   if (b) b.style.display = 'none';
 }
+
+const Auth = {
+  TOKEN_KEY: 'amc_hrms_auth',
+
+  async signIn(email, password) {
+    const res = await fetch(`${SUPA.URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA.KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error_description || data.msg || data.error || 'Invalid email or password');
+    this._store(data);
+    SUPA.authToken = data.access_token;
+    return data;
+  },
+
+  async refresh() {
+    const saved = this._load();
+    if (!saved?.refresh_token) return null;
+    try {
+      const res = await fetch(`${SUPA.URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'apikey': SUPA.KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: saved.refresh_token }),
+      });
+      if (!res.ok) { this.signOutLocal(); return null; }
+      const data = await res.json();
+      this._store(data);
+      SUPA.authToken = data.access_token;
+      return data;
+    } catch (e) { return null; }
+  },
+
+  async restore() {
+    const saved = this._load();
+    if (!saved?.access_token) return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (saved.expires_at && nowSec > saved.expires_at - 60) return await this.refresh();
+    SUPA.authToken = saved.access_token;
+    return saved;
+  },
+
+  signOutLocal() {
+    try { localStorage.removeItem(this.TOKEN_KEY); } catch (e) {}
+    SUPA.authToken = null;
+  },
+
+  _store(data) {
+    const payload = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: Math.floor(Date.now()/1000) + (data.expires_in || 3600) };
+    try { localStorage.setItem(this.TOKEN_KEY, JSON.stringify(payload)); } catch (e) {}
+  },
+
+  _load() {
+    try { return JSON.parse(localStorage.getItem(this.TOKEN_KEY) || 'null'); } catch (e) { return null; }
+  },
+};
