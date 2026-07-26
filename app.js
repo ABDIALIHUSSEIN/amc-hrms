@@ -157,46 +157,44 @@ function getAllowedRoles(currentRole = null) {
 }
 
 
-function doLogin() {
+async function doLogin() {
   const email    = (document.getElementById('loginEmail') || {}).value?.trim() || '';
   const password = (document.getElementById('loginPass')  || {}).value || '';
   const remember = (document.getElementById('rememberMe') || {}).checked;
 
-  // ── INPUT VALIDATION ──
   if (!email)    { shakeField('loginEmail'); toast('Email address is required', 'error'); return; }
   if (!password) { shakeField('loginPass');  toast('Password is required', 'error'); return; }
-  if (password.length < 6) { shakeField('loginPass'); toast('Password must be at least 6 characters', 'error'); return; }
 
-  // ── CREDENTIAL CHECK — role comes from DB record only, never from login form ──
-  const matchedUser = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.status === 'Active'
-  );
+  const btn = document.getElementById('loginBtn');
+  const restoreBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
 
-  const DEMO_PASSWORDS = ['admin123', 'password', 'admin', 'amc2026'];
-  const validPassword  = DEMO_PASSWORDS.includes(password) ||
-    (matchedUser && (password === matchedUser.username || password === matchedUser.email));
-
-  if (!matchedUser) {
+  try {
+    await Auth.signIn(email, password);
+  } catch (err) {
+    restoreBtn();
     shakeField('loginPass');
-    toast('Invalid credentials — account not found or inactive', 'error');
+    const m = /invalid|credential|grant|password/i.test(err.message || '')
+      ? 'Invalid email or password'
+      : /fetch|network|failed/i.test(err.message || '')
+      ? 'Login failed — check your connection'
+      : (err.message || 'Login failed — check your connection');
+    toast(m, 'error');
     return;
   }
 
-  if (!validPassword) {
-    shakeField('loginPass');
-    toast('Incorrect password. Please try again.', 'error');
-    return;
-  }
-
-  // ── ROLE IS TAKEN FROM DATABASE RECORD — not from login form ──
-  // This prevents anyone from self-assigning super_admin via the login page
-  const effectiveRole = matchedUser.role || 'employee'; // locked to DB value
-  const linkedEmp     = matchedUser.empId ? DB.employees.find(e => e.id === matchedUser.empId) : null;
+  // Role comes from DB record only — never from login form
+  const matchedUser = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const effectiveRole = matchedUser?.role || 'employee';
+  const linkedEmp     = matchedUser?.empId ? DB.employees.find(e => e.id === matchedUser.empId) : null;
   const crp           = DB.customRolePermissions || {};
   const roleInfo      = crp[effectiveRole] || { label: toTitleCase(effectiveRole.replace(/_/g,' ')) };
-  const displayName   = linkedEmp ? linkedEmp.name : (matchedUser.username || email.split('@')[0]);
+  const displayName   = linkedEmp ? linkedEmp.name : (matchedUser?.username || email.split('@')[0]);
 
-  matchedUser.failedAttempts = 0;
-  matchedUser.lastLogin      = new Date().toISOString().replace('T',' ').slice(0,16);
+  if (matchedUser) {
+    matchedUser.failedAttempts = 0;
+    matchedUser.lastLogin = new Date().toISOString().replace('T',' ').slice(0,16);
+  }
 
   STATE.role       = effectiveRole;
   STATE.rememberMe = remember;
@@ -204,11 +202,11 @@ function doLogin() {
     name:     displayName,
     role:     roleInfo.label,
     roleKey:  effectiveRole,
-    email:    matchedUser.email,
+    email,
     initials: initials(displayName),
-    empId:    matchedUser.empId    || '',
-    userId:   matchedUser.id       || '',
-    isMaster: MASTER_ADMIN_EMAILS.has(matchedUser.email),
+    empId:    matchedUser?.empId  || '',
+    userId:   matchedUser?.id     || '',
+    isMaster: MASTER_ADMIN_EMAILS.has(email),
   };
 
   if (remember) {
@@ -217,7 +215,8 @@ function doLogin() {
     Session.clear();
   }
 
-  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user:matchedUser.username, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
+  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user: displayName, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
+  restoreBtn();
   bootApp();
 }
 
