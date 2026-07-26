@@ -76,20 +76,11 @@ const SupaSync = {
       const test = await SUPA.select('subsidiaries', 'select=id,name&limit=1');
       this.connected = true;
 
-      if (Array.isArray(test) && test.length > 0) {
-        // Live data exists → load all
-        updateSupaStatus('loading');
-        await this.loadAll();
-        this.mode = 'supabase';
-        toast('Connected to Supabase — live data loaded ✓', 'success');
-      } else {
-        // Tables empty → push local demo data up
-        updateSupaStatus('seeding');
-        await this.seedAll();
-        await this.loadAll();
-        this.mode = 'supabase';
-        toast('Supabase connected — demo data synced ✓', 'success');
-      }
+      // Always load from Supabase — never auto-seed demo data
+      updateSupaStatus('loading');
+      await this.loadAll();
+      this.mode = 'supabase';
+      toast('Connected to Supabase — live data loaded ✓', 'success');
     } catch (err) {
       console.warn('Supabase unavailable:', err.message);
       this.connected = false;
