@@ -292,7 +292,7 @@ auditLogs: [
 
 /* ── USER ACCOUNTS (User Management module) ── */
 users: [
-  { id:'USR000', username:'superadmin',    email:'admin@asalmedia.so', empId:'',       role:'super_admin',     status:'Active',   lastLogin:'2026-06-03 07:00', created:'2018-01-01', failedAttempts:0 },
+  { id:'USR000', username:'superadmin',    email:'sirabdiali@gmail.com', empId:'',       role:'super_admin',     status:'Active',   lastLogin:'2026-06-03 07:00', created:'2018-01-01', failedAttempts:0 },
   { id:'USR001', username:'fatima.hassan', email:'fatima@amc.so',      empId:'EMP001', role:'hr_director',     status:'Active',   lastLogin:'2026-06-03 09:15', created:'2018-01-15', failedAttempts:0 },
   { id:'USR002', username:'ahmed.muse',    email:'ahmed@amc.so',       empId:'EMP002', role:'hr_manager',      status:'Active',   lastLogin:'2026-06-03 09:40', created:'2019-03-10', failedAttempts:0 },
   { id:'USR003', username:'safia.ibrahim', email:'safia@amc.so',       empId:'EMP003', role:'finance_manager', status:'Active',   lastLogin:'2026-06-03 10:00', created:'2019-06-01', failedAttempts:0 },

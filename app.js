@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const SUPER_ADMIN_ROLE    = 'super_admin';
 const PROTECTED_ROLES     = new Set(['super_admin']);
 const ASSIGNABLE_ROLES    = ['employee','dept_manager','hr_manager','finance_manager','team_leader','auditor','viewer','announcements'];
-const MASTER_ADMIN_EMAILS = new Set(['admin@asalmedia.so','superadmin@asalmedia.so']);
+const MASTER_ADMIN_EMAILS = new Set(['sirabdiali@gmail.com','admin@asalmedia.so','superadmin@asalmedia.so']);
 
 // ── Check if current user is the master super admin ──
 function isMasterAdmin() {
@@ -1967,7 +1967,7 @@ function executeReset() {
     { label: 'Removing all departments & teams…',  action: () => { DB.departments = []; DB.teams = []; } },
     { label: 'Removing user accounts…',            action: () => {
         DB.users = [{
-          id:'USR_ADMIN', username:'superadmin', email:'admin@asalmedia.so',
+          id:'USR_ADMIN', username:'superadmin', email:'sirabdiali@gmail.com',
           empId:'', role:'super_admin', status:'Active',
           lastLogin:'Never', created: new Date().toISOString().split('T')[0],
           failedAttempts:0
@@ -2021,7 +2021,7 @@ async function resetSupabase() {
   // Delete all employees and users except superadmin
   try {
     await SUPA.delete('employees', 'id=neq.00000000-0000-0000-0000-000000000000');
-    await SUPA.delete('hrms_users', 'email=neq.admin@asalmedia.so');
+    await SUPA.delete('hrms_users', 'email=neq.sirabdiali@gmail.com');
     await SUPA.delete('departments', 'id=neq.00000000-0000-0000-0000-000000000000');
   } catch(e) { console.warn('Reset: could not clear core tables:', e.message); }
 }
