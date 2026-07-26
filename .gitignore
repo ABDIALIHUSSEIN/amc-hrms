@@ -1,0 +1,15 @@
+# Secrets — never commit these
+.mcp.json
+.env
+.env.local
+*.local
+
+# OS / tooling
+.DS_Store
+.gstack/
+node_modules/
+supabase/.temp/
+
+# Backups
+supabase_schema_v1_old.sql
+*.bak
