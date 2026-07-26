@@ -1,0 +1,2 @@
+[functions.backup-runner]
+verify_jwt = false
