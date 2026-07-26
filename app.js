@@ -173,7 +173,7 @@ function doLogin() {
 
   const DEMO_PASSWORDS = ['admin123', 'password', 'admin', 'amc2026'];
   const validPassword  = DEMO_PASSWORDS.includes(password) ||
-    (matchedUser && password === matchedUser.username);
+    (matchedUser && (password === matchedUser.username || password === matchedUser.email));
 
   if (!matchedUser) {
     shakeField('loginPass');
