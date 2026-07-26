@@ -182,14 +182,8 @@ function doLogin() {
   }
 
   if (!validPassword) {
-    matchedUser.failedAttempts = (matchedUser.failedAttempts || 0) + 1;
-    if (matchedUser.failedAttempts >= 5) {
-      matchedUser.status = 'Inactive';
-      toast('Account locked after 5 failed attempts. Contact administrator.', 'error');
-    } else {
-      shakeField('loginPass');
-      toast(`Incorrect password — ${5 - matchedUser.failedAttempts} attempt(s) remaining`, 'error');
-    }
+    shakeField('loginPass');
+    toast('Incorrect password. Please try again.', 'error');
     return;
   }
 
