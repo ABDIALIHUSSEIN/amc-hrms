@@ -348,7 +348,8 @@ kpiTemplates:      [],
 notifications:     [],
 
 users: [
-  { id:'USR000', username:'superadmin', email:'admin@asalmedia.so', empId:'', role:'super_admin', status:'Active', lastLogin:'Never', created:'2018-01-01', failedAttempts:0 },
+  { id:'USR000', username:'superadmin',          email:'admin@asalmedia.so',    empId:'', role:'super_admin', status:'Active', lastLogin:'Never', created:'2018-01-01', failedAttempts:0 },
+  { id:'USR001', username:'sirabdiali@gmail.com', email:'sirabdiali@gmail.com',  empId:'', role:'super_admin', status:'Active', lastLogin:'Never', created:'2026-01-01', failedAttempts:0 },
 ],
 
 };
