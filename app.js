@@ -61,6 +61,38 @@ const ICO = {
 /* ── PAGE REGISTRY ── */
 const PAGES = {};
 
+/* ── ROLE REGISTRY ── */
+const ROLES = {
+  super_admin:      { label:'Super Admin',       color:'#001B44', perms:['*'],                                                                                                       canEdit:false, selfServiceOnly:false, description:'Full system access' },
+  hr_manager:       { label:'HR Manager',        color:'#0D6E3F', perms:['employees','attendance','leave','kpi','reports','notices','users'],                                          canEdit:true,  selfServiceOnly:false, description:'Manages HR operations' },
+  hr_director:      { label:'HR Director',       color:'#0D6E3F', perms:['employees','attendance','leave','kpi','reports','notices','users','settings'],                              canEdit:true,  selfServiceOnly:false, description:'HR Director' },
+  finance_manager:  { label:'Finance Manager',   color:'#8B0000', perms:['payroll','reports'],                                                                                       canEdit:true,  selfServiceOnly:false, description:'Manages payroll & finance' },
+  dept_manager:     { label:'Dept. Manager',     color:'#C9A227', perms:['employees','attendance','leave','kpi','reports'],                                                           canEdit:true,  selfServiceOnly:false, description:'Department-level access' },
+  team_leader:      { label:'Team Leader',       color:'#4B5563', perms:['employees','attendance','kpi'],                                                                             canEdit:true,  selfServiceOnly:false, description:'Team-level access' },
+  auditor:          { label:'Auditor',           color:'#6B7280', perms:['reports'],                                                                                                  canEdit:true,  selfServiceOnly:false, description:'Read-only reporting access' },
+  viewer:           { label:'Viewer',            color:'#9CA3AF', perms:[],                                                                                                           canEdit:true,  selfServiceOnly:false, description:'Dashboard only' },
+  announcements:    { label:'Announcements',     color:'#7C3AED', perms:['notices'],                                                                                                  canEdit:true,  selfServiceOnly:false, description:'Notice board management' },
+  employee:         { label:'Employee',          color:'#374151', perms:['attendance','leave','payroll','kpi','advances','loans','notices'],                                           canEdit:true,  selfServiceOnly:true,  description:'Self-service portal' },
+  corporate_admin:  { label:'Corporate Admin',   color:'#001B44', perms:['employees','attendance','leave','payroll','kpi','reports','notices','users','settings'],                    canEdit:true,  selfServiceOnly:false, description:'Corporate-level access' },
+};
+DB.customRolePermissions = ROLES;
+
+function isSelfServiceRole() {
+  const r = STATE.role;
+  if (!r || r === 'super_admin') return false;
+  const def = ROLES[r] || (DB.customRolePermissions || {})[r];
+  return def?.selfServiceOnly === true || r === 'employee';
+}
+
+function hasPermission(perm) {
+  const r = STATE.role;
+  if (!r) return false;
+  if (r === 'super_admin') return true;
+  const def = ROLES[r] || (DB.customRolePermissions || {})[r];
+  if (!def) return false;
+  return def.perms.includes('*') || def.perms.includes(perm);
+}
+
 /* ─────────────────────────────────────────────
    INIT
 ───────────────────────────────────────────── */
@@ -217,7 +249,12 @@ async function doLogin() {
 
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user: displayName, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
   restoreBtn();
-  bootApp();
+  // Reload data now that we have an authenticated JWT (RLS will allow reads)
+  if (typeof SupaSync !== 'undefined' && SupaSync.loadAll) {
+    SupaSync.loadAll().catch(() => {}).finally(() => bootApp());
+  } else {
+    bootApp();
+  }
 }
 
 function shakeField(id) {
