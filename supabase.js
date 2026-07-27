@@ -6,13 +6,14 @@
 'use strict';
 
 const SUPA = {
-  URL: 'https://lxpqnlrdnsmzhvnfrgwl.supabase.co',
-  KEY: 'sb_publishable_axozTSrqIVRABArAnSuSqg_iySXJ115',
+  URL:       'https://lxpqnlrdnsmzhvnfrgwl.supabase.co',
+  KEY:       'sb_publishable_axozTSrqIVRABArAnSuSqg_iySXJ115',
+  authToken: null,
 
   headers() {
     return {
       'apikey':        this.KEY,
-      'Authorization': `Bearer ${this.KEY}`,
+      'Authorization': `Bearer ${this.authToken || this.KEY}`,
       'Content-Type':  'application/json',
     };
   },
