@@ -93,6 +93,56 @@ function hasPermission(perm) {
   return def.perms.includes('*') || def.perms.includes(perm);
 }
 
+/* ── SESSION ── */
+const Session = {
+  KEY: 'amc_hrms_session',
+  load()     { try { return JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch { return null; } },
+  save(data) { try { localStorage.setItem(this.KEY, JSON.stringify(data)); } catch {} },
+  clear()    { try { localStorage.removeItem(this.KEY); } catch {} },
+};
+
+/* ── UTILITIES ── */
+function initials(name) {
+  return (name || '').split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).slice(0, 2).join('');
+}
+function toTitleCase(s) {
+  return (s || '').replace(/\b\w/g, c => c.toUpperCase());
+}
+function fmtCurrency(n) {
+  return '$' + (+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  try { return new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }); }
+  catch { return d; }
+}
+function getDeptName(id) { return DB.departments.find(d => d.id === id)?.name || '—'; }
+function getSubName(id)  { return DB.subsidiaries.find(s => s.id === id)?.name || id || '—'; }
+function getTeamName(id) { return DB.teams.find(t => t.id === id)?.name || '—'; }
+function getEmp(id)      { return DB.employees.find(e => e.id === id) || null; }
+
+/* ── PERFORMANCE ENGINE ── */
+const PerfEngine = {
+  calcAchievement(k) {
+    if (!k || !k.target) return 0;
+    return Math.round(((k.actual || 0) / k.target) * 100);
+  },
+  calcEmployeeScore(empId) {
+    const kpis = (DB.kpis || []).filter(k => k.empId === empId);
+    if (!kpis.length) return null;
+    const totalW = kpis.reduce((s, k) => s + (k.weight || 0), 0);
+    if (!totalW) return null;
+    return Math.round(kpis.reduce((s, k) => s + this.calcAchievement(k) * (k.weight || 0), 0) / totalW);
+  },
+  ratingLabel(sc) {
+    if (sc >= 110) return { label:'Outstanding', cls:'outstanding' };
+    if (sc >= 90)  return { label:'Excellent',   cls:'excellent'   };
+    if (sc >= 70)  return { label:'Meets',        cls:'average'     };
+    if (sc >= 50)  return { label:'Needs Impr.',  cls:'poor'        };
+    return               { label:'Unsatisfactory',cls:'poor'        };
+  },
+};
+
 /* ─────────────────────────────────────────────
    INIT
 ───────────────────────────────────────────── */
