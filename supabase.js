@@ -435,11 +435,21 @@ const Auth = {
   TOKEN_KEY: 'amc_hrms_auth',
 
   async signIn(email, password) {
-    const res = await fetch(`${SUPA.URL}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { 'apikey': SUPA.KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(`${SUPA.URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'apikey': SUPA.KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+    } catch (e) {
+      throw new Error(e.name === 'AbortError' ? 'Login timed out — check your connection and try again' : 'Network error — check your connection');
+    } finally {
+      clearTimeout(timer);
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error_description || data.msg || data.error || 'Invalid email or password');
     this._store(data);
