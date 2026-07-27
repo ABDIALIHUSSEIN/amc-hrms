@@ -299,9 +299,12 @@ async function doLogin() {
 
   DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user: displayName, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
   restoreBtn();
-  // Reload data now that we have an authenticated JWT (RLS will allow reads)
+  // Reload data with authenticated JWT so RLS allows reads
   if (typeof SupaSync !== 'undefined' && SupaSync.loadAll) {
-    SupaSync.loadAll().catch(() => {}).finally(() => bootApp());
+    SupaSync.loadAll()
+      .then(() => { SupaSync.connected = true; if (typeof updateSupaStatus === 'function') updateSupaStatus('connected'); })
+      .catch(() => {})
+      .finally(() => bootApp());
   } else {
     bootApp();
   }
