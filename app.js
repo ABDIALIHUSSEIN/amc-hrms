@@ -265,47 +265,56 @@ async function doLogin() {
     return;
   }
 
-  // Role comes from DB record only — never from login form
-  const matchedUser = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  const effectiveRole = matchedUser?.role || 'employee';
-  const linkedEmp     = matchedUser?.empId ? DB.employees.find(e => e.id === matchedUser.empId) : null;
-  const crp           = DB.customRolePermissions || {};
-  const roleInfo      = crp[effectiveRole] || { label: toTitleCase(effectiveRole.replace(/_/g,' ')) };
-  const displayName   = linkedEmp ? linkedEmp.name : (matchedUser?.username || email.split('@')[0]);
+  restoreBtn();
 
-  if (matchedUser) {
-    matchedUser.failedAttempts = 0;
-    matchedUser.lastLogin = new Date().toISOString().replace('T',' ').slice(0,16);
-  }
+  // Resolves STATE.user/role from DB.users. Must run AFTER SupaSync.loadAll()
+  // below, not before — DB.users pre-reload is either stale local data or an
+  // RLS-empty anon read, so computing role here first would boot real users
+  // in with the wrong role/permissions every time.
+  const finishLogin = () => {
+    const matchedUser = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const effectiveRole = matchedUser?.role || 'employee';
+    const linkedEmp     = matchedUser?.empId ? DB.employees.find(e => e.id === matchedUser.empId) : null;
+    const crp           = DB.customRolePermissions || {};
+    const roleInfo      = crp[effectiveRole] || { label: toTitleCase(effectiveRole.replace(/_/g,' ')) };
+    const displayName   = linkedEmp ? linkedEmp.name : (matchedUser?.username || email.split('@')[0]);
 
-  STATE.role       = effectiveRole;
-  STATE.rememberMe = remember;
-  STATE.user       = {
-    name:     displayName,
-    role:     roleInfo.label,
-    roleKey:  effectiveRole,
-    email,
-    initials: initials(displayName),
-    empId:    matchedUser?.empId  || '',
-    userId:   matchedUser?.id     || '',
-    isMaster: MASTER_ADMIN_EMAILS.has(email),
+    if (matchedUser) {
+      matchedUser.failedAttempts = 0;
+      matchedUser.lastLogin = new Date().toISOString().replace('T',' ').slice(0,16);
+    }
+
+    STATE.role       = effectiveRole;
+    STATE.rememberMe = remember;
+    STATE.user       = {
+      name:     displayName,
+      role:     roleInfo.label,
+      roleKey:  effectiveRole,
+      email,
+      initials: initials(displayName),
+      empId:    matchedUser?.empId  || '',
+      userId:   matchedUser?.id     || '',
+      isMaster: MASTER_ADMIN_EMAILS.has(email),
+    };
+
+    if (remember) {
+      Session.save({ user: STATE.user, role: STATE.role, subsidiary: STATE.subsidiary, theme: STATE.theme, rememberMe: true });
+    } else {
+      Session.clear();
+    }
+
+    DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user: displayName, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
   };
 
-  if (remember) {
-    Session.save({ user: STATE.user, role: STATE.role, subsidiary: STATE.subsidiary, theme: STATE.theme, rememberMe: true });
-  } else {
-    Session.clear();
-  }
-
-  DB.auditLogs.unshift({ id:DB.auditLogs.length+1, time:new Date().toISOString().replace('T',' ').slice(0,16), user: displayName, userRole:roleInfo.label, action:`Login — ${email} (role: ${effectiveRole})`, module:'Auth', ip:'browser' });
-  restoreBtn();
-  // Reload data with authenticated JWT so RLS allows reads
+  // Reload data with authenticated JWT so RLS allows reads, then resolve
+  // identity/role against the freshly-loaded DB.users.
   if (typeof SupaSync !== 'undefined' && SupaSync.loadAll) {
     SupaSync.loadAll()
       .then(() => { SupaSync.connected = true; if (typeof updateSupaStatus === 'function') updateSupaStatus('connected'); })
       .catch(() => {})
-      .finally(() => bootApp());
+      .finally(() => { finishLogin(); bootApp(); });
   } else {
+    finishLogin();
     bootApp();
   }
 }
