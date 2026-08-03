@@ -83,6 +83,8 @@ grades: [
 employees: [],
 
 kpis:              [],
+tasks:             [],
+projects:          [],
 attendance:        [],
 leaveRequests:     [],
 leaveBalances:     {},

@@ -64,16 +64,16 @@ const PAGES = {};
 /* ── ROLE REGISTRY ── */
 const ROLES = {
   super_admin:      { label:'Super Admin',       color:'#001B44', perms:['*'],                                                                                                       canEdit:false, selfServiceOnly:false, description:'Full system access' },
-  hr_manager:       { label:'HR Manager',        color:'#0D6E3F', perms:['employees','attendance','leave','kpi','reports','notices','users'],                                          canEdit:true,  selfServiceOnly:false, description:'Manages HR operations' },
-  hr_director:      { label:'HR Director',       color:'#0D6E3F', perms:['employees','attendance','leave','kpi','reports','notices','users','settings'],                              canEdit:true,  selfServiceOnly:false, description:'HR Director' },
+  hr_manager:       { label:'HR Manager',        color:'#0D6E3F', perms:['employees','attendance','leave','kpi','tasksprojects','reports','notices','users'],                          canEdit:true,  selfServiceOnly:false, description:'Manages HR operations' },
+  hr_director:      { label:'HR Director',       color:'#0D6E3F', perms:['employees','attendance','leave','kpi','tasksprojects','reports','notices','users','settings'],              canEdit:true,  selfServiceOnly:false, description:'HR Director' },
   finance_manager:  { label:'Finance Manager',   color:'#8B0000', perms:['payroll','reports'],                                                                                       canEdit:true,  selfServiceOnly:false, description:'Manages payroll & finance' },
-  dept_manager:     { label:'Dept. Manager',     color:'#C9A227', perms:['employees','attendance','leave','kpi','reports'],                                                           canEdit:true,  selfServiceOnly:false, description:'Department-level access' },
-  team_leader:      { label:'Team Leader',       color:'#4B5563', perms:['employees','attendance','kpi'],                                                                             canEdit:true,  selfServiceOnly:false, description:'Team-level access' },
+  dept_manager:     { label:'Dept. Manager',     color:'#C9A227', perms:['employees','attendance','leave','kpi','tasksprojects','reports'],                                           canEdit:true,  selfServiceOnly:false, description:'Department-level access' },
+  team_leader:      { label:'Team Leader',       color:'#4B5563', perms:['employees','attendance','kpi','tasksprojects'],                                                             canEdit:true,  selfServiceOnly:false, description:'Team-level access' },
   auditor:          { label:'Auditor',           color:'#6B7280', perms:['reports'],                                                                                                  canEdit:true,  selfServiceOnly:false, description:'Read-only reporting access' },
   viewer:           { label:'Viewer',            color:'#9CA3AF', perms:[],                                                                                                           canEdit:true,  selfServiceOnly:false, description:'Dashboard only' },
   announcements:    { label:'Announcements',     color:'#7C3AED', perms:['notices'],                                                                                                  canEdit:true,  selfServiceOnly:false, description:'Notice board management' },
   employee:         { label:'Employee',          color:'#374151', perms:['attendance','leave','payroll','kpi','advances','loans','notices'],                                           canEdit:true,  selfServiceOnly:true,  description:'Self-service portal' },
-  corporate_admin:  { label:'Corporate Admin',   color:'#001B44', perms:['employees','attendance','leave','payroll','kpi','reports','notices','users','settings'],                    canEdit:true,  selfServiceOnly:false, description:'Corporate-level access' },
+  corporate_admin:  { label:'Corporate Admin',   color:'#001B44', perms:['employees','attendance','leave','payroll','kpi','tasksprojects','reports','notices','users','settings'],    canEdit:true,  selfServiceOnly:false, description:'Corporate-level access' },
 };
 DB.customRolePermissions = ROLES;
 
@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── SUPABASE INIT ──
   // Connect to Supabase after boot. Falls back to local data on error.
   if (typeof SupaSync !== 'undefined') {
-    SupaSync.init().then(() => updateSupaStatus());
+    SupaSync.init();
   }
 });
 
@@ -391,6 +391,7 @@ const PAGE_LABELS = {
   dashboard:'Dashboard', employees:'Employees', attendance:'Attendance',
   leave:'Leave Management', payroll:'Payroll', recruitment:'Recruitment',
   training:'Training', performance:'Performance', kpi:'KPI Management',
+  tasksprojects:'Tasks & Projects',
   succession:'Succession', users:'User Management', disciplinary:'Disciplinary',
   reports:'Reports & Analytics', organization:'Organization', settings:'Settings',
 };
@@ -442,13 +443,18 @@ function nav(page) {
   wrap.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
   setTimeout(() => {
     wrap.innerHTML = '';
-    // Employee: always use self-service page renderer
-    if (isSelfServiceRole() && SELF_PAGES[page]) {
-      SELF_PAGES[page](wrap);
-    } else if (PAGES[page]) {
-      PAGES[page](wrap);
-    } else {
-      wrap.innerHTML = `<div class="page"><div class="empty-state"><h3>Page not found</h3></div></div>`;
+    try {
+      // Employee: always use self-service page renderer
+      if (isSelfServiceRole() && SELF_PAGES[page]) {
+        SELF_PAGES[page](wrap);
+      } else if (PAGES[page]) {
+        PAGES[page](wrap);
+      } else {
+        wrap.innerHTML = `<div class="page"><div class="empty-state"><h3>Page not found</h3></div></div>`;
+      }
+    } catch(e) {
+      console.error('nav render error [' + page + ']:', e.message, e.stack);
+      wrap.innerHTML = `<div class="page"><div class="page-header"><div class="page-header-left"><div class="page-title">Error loading page</div></div></div><div style="padding:24px;color:var(--red)"><b>${e.message}</b></div></div>`;
     }
     wrap.scrollTop = 0;
   }, 30);
@@ -480,6 +486,7 @@ function applySidebarRBAC() {
     training:     'training',
     performance:  'performance',
     kpi:          'kpi',
+    tasksprojects:'tasksprojects',
     succession:   'succession',
     reports:      'reports',
     users:        'users',
@@ -1668,6 +1675,129 @@ function runPayrollBatch(){
 PAGES.performance = function(wrap) {
   wrap.innerHTML=`<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Performance Management</div> <div class="page-sub">Monthly · Quarterly · Annual evaluations · KPI-driven scoring</div></div> <div class="page-actions"> <button class="btn btn-outline btn-sm" onclick="exportPerformance()">${ICO.excel} Export</button> <button class="btn btn-primary btn-sm" onclick="nav('kpi')">${ICO.star} Manage KPIs</button> </div> </div> <div id="perfBody">${kpiScoresHTML()}</div> </div>`;
 };
+
+/* ── TASKS & PROJECTS ──
+   tasks.employee_id / kpis.employee_id store employees.employee_number (e.g. "ASL0002"),
+   not employees.id (a uuid once loaded from Supabase) — so this module resolves/assigns
+   via employee_number, with a fallback to id for offline/local-seed mode. */
+function empCode(e) { return e.employee_number || e.id; }
+function empByCode(code) {
+  if (!code) return null;
+  return DB.employees.find(e => e.employee_number === code || e.id === code) || null;
+}
+
+PAGES.tasksprojects = function(wrap) {
+  wrap.innerHTML = `<div class="page"> <div class="page-header"> <div class="page-header-left"><div class="page-title">Tasks & Projects</div> <div class="page-sub">Project directory and individual tasks, optionally linked to KPIs</div></div> <div class="page-actions"> <button class="btn btn-outline btn-sm" onclick="openProjectModal()">${ICO.plus} New Project</button> <button class="btn btn-primary btn-sm" onclick="openTaskModal()">${ICO.plus} New Task</button> </div> </div> <div class="tabs" id="tpTabs"> <div class="tab active" onclick="tpTab('projects',this)">Projects</div> <div class="tab" onclick="tpTab('tasks',this)">Tasks</div> </div> <div id="tpBody">${projectsHTML()}</div> </div>`;
+};
+
+function tpTab(tab, el) {
+  document.querySelectorAll('#tpTabs .tab').forEach(t=>t.classList.remove('active')); el.classList.add('active');
+  const fns = { projects: projectsHTML, tasks: tasksHTML };
+  document.getElementById('tpBody').innerHTML = (fns[tab]||projectsHTML)();
+}
+
+function projectsHTML() {
+  const projects = DB.projects;
+  if (!projects.length) return `<div class="empty-state"><h3>No projects yet</h3><p>Create your first project to start tracking work.</p></div>`;
+  const statusBadgeCls = { Active:'badge-green', Completed:'badge-teal', 'On Hold':'badge-amber', Cancelled:'badge-red' };
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-top:4px"> ${projects.map(p => {
+      const owner = empByCode(p.owner);
+      return `<div class="card"> <div class="card-header"> <div><div class="card-title">${p.name}</div><div class="card-sub">Owner: ${owner?owner.name:(p.owner||'—')}</div></div> <span class="badge ${statusBadgeCls[p.status]||'badge-navy'}">${p.status}</span> </div> <div class="card-body" style="padding-top:10px;font-size:12px;color:var(--gray-500)"> <div>${p.startDate?fmtDate(p.startDate):'—'} → ${p.endDate?fmtDate(p.endDate):'Ongoing'}</div> <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">${(p.assignedEmployees||[]).map(code=>{const e=empByCode(code);return `<span class="badge badge-navy" style="font-size:10px">${e?e.name:code}</span>`;}).join('') || '<span style="color:var(--gray-400)">No employees assigned</span>'}</div> </div> <div class="card-footer" style="display:flex;gap:8px"> <button class="btn btn-outline btn-sm" onclick="openProjectModal('${p.id}')">${ICO.edit} Edit</button> <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteProject('${p.id}')">${ICO.trash}</button> </div> </div>`;
+    }).join('')}
+    <div class="card" style="border:2px dashed var(--gray-200);background:transparent;display:flex;align-items:center;justify-content:center;min-height:160px;cursor:pointer" onclick="openProjectModal()"> <div style="text-align:center;color:var(--gray-400)"> <div style="font-size:32px;margin-bottom:8px">+</div> <div style="font-size:13px;font-weight:600">New Project</div> </div> </div> </div>`;
+}
+
+function tasksHTML() {
+  const tasks = DB.tasks;
+  return `<div class="card"><div class="table-wrap"><table class="table"> <thead><tr><th>Employee</th><th>Task</th><th>Linked KPI</th><th>Status</th><th>Due Date</th><th>Result</th><th>Actions</th></tr></thead> <tbody>${tasks.length ? tasks.map(t => {
+      const e = empByCode(t.empId);
+      const kpi = DB.kpis.find(k=>k.id===t.kpiId);
+      return `<tr> <td><div class="emp-cell"><div class="avatar-sm" style="width:28px;height:28px;font-size:10px">${e?initials(e.name):'?'}</div><div><div class="emp-name">${e?e.name:t.empId}</div><div class="emp-id">${t.empId}</div></div></div></td> <td style="font-size:12px;font-weight:600">${t.title}${t.description?`<div style="font-size:11px;color:var(--gray-400);font-weight:400">${t.description}</div>`:''}</td> <td style="font-size:12px">${kpi?kpi.title:'—'}</td> <td><select class="form-control" style="font-size:11px;padding:4px 8px" onchange="updateTaskStatus('${t.id}',this.value)">${['To Do','In Progress','Completed','Blocked'].map(s=>`<option${s===t.status?' selected':''}>${s}</option>`).join('')}</select></td> <td style="font-family:var(--mono);font-size:12px">${t.dueDate?fmtDate(t.dueDate):'—'}</td> <td style="font-size:12px">${t.actualResult||'—'}</td> <td><div style="display:flex;gap:4px"><button class="btn btn-outline btn-xs" onclick="openTaskModal('${t.id}')">${ICO.edit}</button><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteTask('${t.id}')">${ICO.trash}</button></div></td> </tr>`;
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">No tasks yet</td></tr>'}</tbody> </table></div></div>`;
+}
+
+function openProjectModal(projectId) {
+  const p = projectId ? DB.projects.find(x=>x.id===projectId) : null;
+  const emps = filteredEmps();
+  openModal('wide', `
+    <div class="modal-header"><span class="modal-title">${p?'Edit Project':'New Project'}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Project Name</label><input class="form-control" id="pj_name" value="${p?p.name:''}" placeholder="e.g. Shabakada Season 4"></div> <div class="form-group"><label class="form-label">Owner</label><select class="form-control" id="pj_owner"><option value="">—</option>${emps.map(e=>`<option value="${empCode(e)}"${p&&p.owner===empCode(e)?' selected':''}>${e.name}</option>`).join('')}</select></div> </div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" type="date" id="pj_start" value="${p?p.startDate:''}"></div> <div class="form-group"><label class="form-label">End Date</label><input class="form-control" type="date" id="pj_end" value="${p?p.endDate:''}"></div> </div> <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="pj_status">${['Active','On Hold','Completed','Cancelled'].map(s=>`<option${p&&p.status===s?' selected':''}>${s}</option>`).join('')}</select></div> <div class="form-group"><label class="form-label">Assigned Employees</label> <div style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);padding:8px"> ${emps.map(e=>`<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px"><input type="checkbox" value="${empCode(e)}" class="pj-emp-check"${p&&(p.assignedEmployees||[]).includes(empCode(e))?' checked':''}> ${e.name} <span style="color:var(--gray-400)">(${empCode(e)})</span></label>`).join('')} </div> </div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveProjectModal('${p?p.id:''}')">${p?'Save Changes':'Create Project'}</button> </div>`);
+}
+
+function saveProjectModal(projectId) {
+  const name = (document.getElementById('pj_name')||{}).value;
+  if (!name) { toast('Project name required','error'); return; }
+  const assigned = Array.from(document.querySelectorAll('.pj-emp-check:checked')).map(c=>c.value);
+  const data = {
+    id: projectId || ('PRJ_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    name, owner: document.getElementById('pj_owner').value || '',
+    startDate: document.getElementById('pj_start').value || '',
+    endDate: document.getElementById('pj_end').value || '',
+    status: document.getElementById('pj_status').value,
+    assignedEmployees: assigned,
+    createdBy: (projectId && DB.projects.find(x=>x.id===projectId)?.createdBy) || STATE.user?.email || STATE.user?.username || '',
+  };
+  const idx = DB.projects.findIndex(x=>x.id===data.id);
+  if (idx>-1) DB.projects[idx] = { ...DB.projects[idx], ...data }; else DB.projects.push(data);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveProject(data);
+  closeModal(); toast(projectId?'Project updated':'Project created','success'); nav('tasksprojects');
+  scheduleSave();
+}
+
+function deleteProject(projectId) {
+  if (!confirm('Delete this project? This cannot be undone.')) return;
+  DB.projects = DB.projects.filter(p=>p.id!==projectId);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteProject(projectId);
+  toast('Project deleted','info'); nav('tasksprojects');
+  scheduleSave();
+}
+
+function openTaskModal(taskId) {
+  const t = taskId ? DB.tasks.find(x=>x.id===taskId) : null;
+  const emps = filteredEmps();
+  openModal('wide', `
+    <div class="modal-header"><span class="modal-title">${t?'Edit Task':'New Task'}</span>${closeX()}</div> <div class="modal-body"> <div class="form-row cols-2"> <div class="form-group"><label class="form-label required">Employee</label><select class="form-control" id="tk_emp">${emps.map(e=>`<option value="${empCode(e)}"${t&&t.empId===empCode(e)?' selected':''}>${e.name}</option>`).join('')}</select></div> <div class="form-group"><label class="form-label">Linked KPI</label><select class="form-control" id="tk_kpi"><option value="">— None —</option>${DB.kpis.map(k=>`<option value="${k.id}"${t&&t.kpiId===k.id?' selected':''}>${k.title} (${k.empId})</option>`).join('')}</select></div> </div> <div class="form-group"><label class="form-label required">Task Title</label><input class="form-control" id="tk_title" value="${t?t.title:''}" placeholder="e.g. Edit episode 4"></div> <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" id="tk_desc">${t?t.description:''}</textarea></div> <div class="form-row cols-2"> <div class="form-group"><label class="form-label">Due Date</label><input class="form-control" type="date" id="tk_due" value="${t?t.dueDate:''}"></div> <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="tk_status">${['To Do','In Progress','Completed','Blocked'].map(s=>`<option${t&&t.status===s?' selected':''}>${s}</option>`).join('')}</select></div> </div> <div class="form-group"><label class="form-label">Comments</label><textarea class="form-control" id="tk_comments">${t?t.comments:''}</textarea></div> </div> <div class="modal-footer"> <button class="btn btn-outline" onclick="closeModal()">Cancel</button> <button class="btn btn-primary" onclick="saveTaskModal('${t?t.id:''}')">${t?'Save Changes':'Create Task'}</button> </div>`);
+}
+
+function saveTaskModal(taskId) {
+  const title = (document.getElementById('tk_title')||{}).value;
+  if (!title) { toast('Task title required','error'); return; }
+  const existing = taskId ? DB.tasks.find(x=>x.id===taskId) : null;
+  const data = {
+    id: taskId || ('TSK_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    empId: document.getElementById('tk_emp').value,
+    kpiId: document.getElementById('tk_kpi').value || '',
+    title, description: document.getElementById('tk_desc').value || '',
+    dueDate: document.getElementById('tk_due').value || '',
+    status: document.getElementById('tk_status').value,
+    comments: document.getElementById('tk_comments').value || '',
+    actualResult: existing?.actualResult || '',
+    createdBy: existing?.createdBy || STATE.user?.email || STATE.user?.username || '',
+    updatedBy: STATE.user?.email || STATE.user?.username || '',
+  };
+  const idx = DB.tasks.findIndex(x=>x.id===data.id);
+  if (idx>-1) DB.tasks[idx] = { ...DB.tasks[idx], ...data }; else DB.tasks.push(data);
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(data);
+  closeModal(); toast(taskId?'Task updated':'Task created','success'); nav('tasksprojects');
+  scheduleSave();
+}
+
+function updateTaskStatus(taskId, status) {
+  const t = DB.tasks.find(x=>x.id===taskId); if (!t) return;
+  t.status = status;
+  if (status === 'Completed' && !t.completionDate) t.completionDate = new Date().toISOString().split('T')[0];
+  t.updatedBy = STATE.user?.email || STATE.user?.username || '';
+  if (typeof SupaWrite!=='undefined') SupaWrite.saveTask(t);
+  toast('Task status updated','success');
+  scheduleSave();
+}
+
+function deleteTask(taskId) {
+  if (!confirm('Delete this task?')) return;
+  DB.tasks = DB.tasks.filter(t=>t.id!==taskId);
+  if (typeof SupaWrite!=='undefined') SupaWrite.deleteTask(taskId);
+  toast('Task deleted','info'); nav('tasksprojects');
+  scheduleSave();
+}
 
 /* ── RECRUITMENT ── */
 PAGES.recruitment = function(wrap) {

@@ -108,10 +108,13 @@ const SupaSync = {
       SUPA.select('audit_logs',       'order=created_at.desc&limit=50'),
       SUPA.select('payroll',          `order=created_at.desc&limit=200`),
       SUPA.select('attendance',       `date=eq.${new Date().toISOString().split('T')[0]}&limit=200`),
+      SUPA.select('tasks',            'deleted_at=is.null&order=due_date&limit=1000'),
+      SUPA.select('projects',         'deleted_at=is.null&order=created_at.desc&limit=500'),
     ]);
 
     const [subs, depts, emps, users, leaveReqs, leaveBals,
-           kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att] = loads.map(r => r.value || []);
+           kpiTmpls, kpiItems, kpis, eduRecs, logs, payroll, att,
+           tasks, projects] = loads.map(r => r.value || []);
 
     if (subs?.length)   DB.subsidiaries   = subs;
     if (depts?.length)  DB.departments    = depts.map(d => ({ ...d, sub: d.subsidiary_id, head: d.head_employee_id }));
@@ -219,7 +222,22 @@ const SupaSync = {
         ot: parseFloat(a.ot_hours)||0, shortHrs: 0,
       }));
     }
-    console.log(`✓ Supabase loaded: ${DB.employees.length} employees, ${DB.kpis.length} KPIs`);
+    DB.tasks = (tasks||[]).map(t => ({
+      id: t.id, kpiId: t.kpi_id || '', empId: t.employee_id,
+      title: t.title, description: t.description || '',
+      status: t.status || 'To Do', dueDate: t.due_date || '',
+      actualResult: t.actual_result || '', actualValue: t.actual_value ?? null,
+      comments: t.comments || '', evidenceUrl: t.evidence_url || '',
+      completionDate: t.completion_date || '',
+      createdBy: t.created_by || '', updatedBy: t.updated_by || '',
+    }));
+    DB.projects = (projects||[]).map(p => ({
+      id: p.id, name: p.name, owner: p.owner || '',
+      startDate: p.start_date || '', endDate: p.end_date || '',
+      status: p.status || 'Active', assignedEmployees: p.assigned_employees || [],
+      createdBy: p.created_by || '',
+    }));
+    console.log(`✓ Supabase loaded: ${DB.employees.length} employees, ${DB.kpis.length} KPIs, ${DB.tasks.length} tasks, ${DB.projects.length} projects`);
   },
 
   async seedAll() {
@@ -363,6 +381,41 @@ const SupaWrite = {
         module: entry.module, ip_address: entry.ip||'browser',
       });
     } catch(e) { /* silent */ }
+  },
+  async saveTask(t) {
+    if (!SupaSync.connected) return;
+    try {
+      await SUPA.upsert('tasks', {
+        id: t.id, kpi_id: t.kpiId||null, employee_id: t.empId,
+        title: t.title, description: t.description||null, status: t.status,
+        due_date: t.dueDate||null, actual_result: t.actualResult||null,
+        actual_value: t.actualValue ?? null, comments: t.comments||null,
+        evidence_url: t.evidenceUrl||null, completion_date: t.completionDate||null,
+        created_by: t.createdBy||null, updated_by: t.updatedBy||null,
+        updated_at: new Date().toISOString(),
+      });
+    } catch(e) { console.warn('SupaWrite.saveTask:', e.message); }
+  },
+  async deleteTask(taskId) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.update('tasks', `id=eq.${taskId}`, { deleted_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.deleteTask:', e.message); }
+  },
+  async saveProject(p) {
+    if (!SupaSync.connected) return;
+    try {
+      await SUPA.upsert('projects', {
+        id: p.id, name: p.name, owner: p.owner||null,
+        start_date: p.startDate||null, end_date: p.endDate||null,
+        status: p.status, assigned_employees: p.assignedEmployees||[],
+        created_by: p.createdBy||null, updated_at: new Date().toISOString(),
+      });
+    } catch(e) { console.warn('SupaWrite.saveProject:', e.message); }
+  },
+  async deleteProject(projectId) {
+    if (!SupaSync.connected) return;
+    try { await SUPA.update('projects', `id=eq.${projectId}`, { deleted_at: new Date().toISOString() }); }
+    catch(e) { console.warn('SupaWrite.deleteProject:', e.message); }
   },
 };
 

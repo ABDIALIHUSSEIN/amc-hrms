@@ -1,9 +1,8 @@
 /**
  * AMC HRMS — Backup Runner Edge Function
  * Triggers: Supabase cron (25th of month, 02:00) + manual POST from admin panel
- * Exports all tables → Google Drive (HRM_BACKUPS/YYYY/MM-Month/) → email via Resend
- * Secrets required: SUPABASE_SERVICE_ROLE_KEY, GOOGLE_SERVICE_ACCOUNT_JSON,
- *                   RESEND_API_KEY, BACKUP_EMAIL_TO, BACKUP_ADMIN_SECRET
+ * Exports all tables → Supabase Storage (hrm-backups/YYYY/MM-Month/) → email via Resend
+ * Secrets required: SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, BACKUP_EMAIL_TO, BACKUP_ADMIN_SECRET
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -16,6 +15,8 @@ const TABLES = [
   "settings", "bonus_rules", "guarantors", "hrms_users", "audit_logs",
   "notices", "appraisal_cycles",
 ];
+
+const BUCKET = "hrm-backups";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,19 +33,14 @@ function json(obj: unknown, status = 200) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
-  // Auth: Supabase scheduler sends X-Trigger: cron.
-  // Manual calls from the admin panel carry the user's Supabase JWT — we
-  // validate the caller is admin by checking their role via the service client.
   const isCron = req.headers.get("X-Trigger") === "cron";
   const authHeader = req.headers.get("Authorization") || "";
 
   if (!isCron) {
-    // Allow calls with the explicit admin secret (CLI / testing)
     const secret = Deno.env.get("BACKUP_ADMIN_SECRET") || "";
     const isSecretCall = secret && authHeader === `Bearer ${secret}`;
 
     if (!isSecretCall) {
-      // Validate user JWT — must be admin role
       const userClient = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -76,7 +72,6 @@ Deno.serve(async (req) => {
   const date = new Date().toISOString().slice(0, 10);
   const filename = `HRM_BACKUP_${date}.json`;
 
-  // Insert running entry so dashboard shows live status
   await supabase.from("backup_logs").insert({
     id: runId,
     backup_date: date,
@@ -101,32 +96,20 @@ Deno.serve(async (req) => {
   // 2. Integrity validation
   const warnings: string[] = [];
 
-  // Payroll: orphan rows (no matching employee)
   const empIds = new Set((data.employees as any[] || []).map((e) => e.id));
-  const orphanPayroll = (data.payroll as any[] || []).filter(
-    (p) => !empIds.has(p.employee_id)
-  );
+  const orphanPayroll = (data.payroll as any[] || []).filter((p) => !empIds.has(p.employee_id));
   if (orphanPayroll.length)
     warnings.push(`${orphanPayroll.length} payroll rows with unknown employee_id`);
 
-  // Payroll: duplicate (employee_id + month)
   const payKeys = (data.payroll as any[] || []).map((p) => `${p.employee_id}|${p.month}`);
   const dupPay = payKeys.filter((k, i) => payKeys.indexOf(k) !== i);
   if (dupPay.length) warnings.push(`${dupPay.length} duplicate payroll entries`);
 
-  // KPIs: missing target/actual
-  const badKpis = (data.kpis as any[] || []).filter(
-    (k) => k.target == null || k.actual == null
-  );
+  const badKpis = (data.kpis as any[] || []).filter((k) => k.target == null || k.actual == null);
   if (badKpis.length) warnings.push(`${badKpis.length} KPIs with null target or actual`);
 
-  // Abort on critical errors (any table completely failed)
   if (errors.length > 3) {
-    await supabase.from("backup_logs").update({
-      status: "failed",
-      errors,
-      warnings,
-    }).eq("id", runId);
+    await supabase.from("backup_logs").update({ status: "failed", errors, warnings }).eq("id", runId);
     await sendEmail(
       `HRM Backup FAILED — ${date}`,
       `<h2>Backup aborted</h2><p><b>Critical errors (${errors.length}):</b><br>${errors.join("<br>")}</p>`
@@ -141,83 +124,38 @@ Deno.serve(async (req) => {
     2
   );
 
-  // 3. Upload to Google Drive
-  let driveFileId: string | null = null;
-  let driveLink: string | null = null;
-  let driveError: string | null = null;
+  // 3. Upload to Supabase Storage
+  const year = new Date().getFullYear().toString();
+  const monthNum = String(new Date().getMonth() + 1).padStart(2, "0");
+  const monthName = new Date().toLocaleString("en-US", { month: "long" });
+  const storagePath = `${year}/${monthNum}-${monthName}/${filename}`;
+
+  let storageLink: string | null = null;
+  let storageError: string | null = null;
 
   try {
-    const serviceAccount = JSON.parse(Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON") || "{}");
-    if (!serviceAccount.client_email) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
+    // Create bucket if it doesn't exist yet
+    await supabase.storage.createBucket(BUCKET, { public: false });
+    // (ignore "already exists" error — createBucket is idempotent in effect)
 
-    const token = await getGoogleToken(serviceAccount, [
-      "https://www.googleapis.com/auth/drive",
-    ]);
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, payload, { contentType: "application/json", upsert: true });
+    if (uploadError) throw new Error(uploadError.message);
 
-    const year = new Date().getFullYear().toString();
-    const monthNum = String(new Date().getMonth() + 1).padStart(2, "0");
-    const monthName = new Date().toLocaleString("en-US", { month: "long" });
-
-    // DRIVE_FOLDER_ID = user's shared HRM_BACKUPS folder (personal Drive)
-    // If not set, create HRM_BACKUPS in the service account's own Drive
-    const sharedRootId = Deno.env.get("DRIVE_FOLDER_ID") || null;
-    const rootId = sharedRootId ?? await findOrCreateFolder(token, "HRM_BACKUPS", null);
-    const yearId = await findOrCreateFolder(token, year, rootId);
-    const monthId = await findOrCreateFolder(token, `${monthNum}-${monthName}`, yearId);
-
-    const boundary = "backup_multipart_boundary";
-    const multipart = [
-      `--${boundary}`,
-      "Content-Type: application/json; charset=UTF-8",
-      "",
-      JSON.stringify({ name: filename, parents: [monthId] }),
-      `--${boundary}`,
-      "Content-Type: application/json; charset=UTF-8",
-      "",
-      payload,
-      `--${boundary}--`,
-    ].join("\r\n");
-
-    const uploadRes = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": `multipart/related; boundary=${boundary}`,
-        },
-        body: multipart,
-      }
-    );
-    const uploadData = await uploadRes.json();
-    if (!uploadData.id) throw new Error(JSON.stringify(uploadData));
-    driveFileId = uploadData.id;
-
-    // Make file accessible to anyone with the link
-    await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ role: "reader", type: "anyone" }),
-    });
-
-    // Also share with the backup email recipient
-    const emailTo = Deno.env.get("BACKUP_EMAIL_TO");
-    if (emailTo) {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions?sendNotificationEmail=false`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "reader", type: "user", emailAddress: emailTo }),
-      });
-    }
-
-    driveLink = `https://drive.google.com/file/d/${driveFileId}/view`;
+    // Signed URL valid for 90 days
+    const { data: signed, error: signError } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 90);
+    if (signError) throw new Error(signError.message);
+    storageLink = signed.signedUrl;
   } catch (e: any) {
-    driveError = e.message;
-    console.error("Drive upload failed:", e.message);
+    storageError = e.message;
+    console.error("Storage upload failed:", e.message);
   }
 
   // 4. Send email
-  const emailSubject = driveError
+  const emailSubject = storageError
     ? `HRM Backup PARTIAL — ${date}`
     : `HRM Backup SUCCESS — ${date}`;
 
@@ -227,27 +165,27 @@ Deno.serve(async (req) => {
       <table style="border-collapse:collapse;width:100%">
         <tr><td style="padding:6px 12px;font-weight:600;color:#374151">Date</td><td>${date}</td></tr>
         <tr style="background:#f9fafb"><td style="padding:6px 12px;font-weight:600;color:#374151">Status</td>
-          <td>${driveError ? "⚠️ Drive upload failed" : "✅ Success"}</td></tr>
+          <td>${storageError ? "⚠️ Storage upload failed" : "✅ Success"}</td></tr>
         <tr><td style="padding:6px 12px;font-weight:600;color:#374151">Triggered by</td><td>${triggeredBy}</td></tr>
         <tr style="background:#f9fafb"><td style="padding:6px 12px;font-weight:600;color:#374151">Tables</td><td>${TABLES.length - errors.length} / ${TABLES.length}</td></tr>
         <tr><td style="padding:6px 12px;font-weight:600;color:#374151">Total records</td><td>${recordCount.toLocaleString()}</td></tr>
-        ${driveLink ? `<tr style="background:#f9fafb"><td style="padding:6px 12px;font-weight:600;color:#374151">Download</td><td><a href="${driveLink}" style="color:#2563EB">${filename}</a></td></tr>` : ""}
+        ${storageLink ? `<tr style="background:#f9fafb"><td style="padding:6px 12px;font-weight:600;color:#374151">Download</td><td><a href="${storageLink}" style="color:#2563EB">${filename}</a></td></tr>` : ""}
       </table>
       ${warnings.length ? `<div style="margin-top:16px;padding:12px;background:#FEF3C7;border-radius:6px"><strong>Warnings:</strong><br>${warnings.join("<br>")}</div>` : ""}
       ${errors.length ? `<div style="margin-top:12px;padding:12px;background:#FEE2E2;border-radius:6px"><strong>Errors:</strong><br>${errors.join("<br>")}</div>` : ""}
-      ${driveError ? `<div style="margin-top:12px;padding:12px;background:#FEE2E2;border-radius:6px"><strong>Drive Error:</strong> ${driveError}</div>` : ""}
+      ${storageError ? `<div style="margin-top:12px;padding:12px;background:#FEE2E2;border-radius:6px"><strong>Storage Error:</strong> ${storageError}</div>` : ""}
     </div>
   `;
 
   const emailSent = await sendEmail(emailSubject, emailHtml);
 
   // 5. Update backup_logs
-  const finalStatus = errors.length > 0 ? "partial" : driveError ? "partial" : "success";
+  const finalStatus = errors.length > 0 || storageError ? "partial" : "success";
   await supabase.from("backup_logs").update({
     status: finalStatus,
-    drive_file_id: driveFileId,
-    drive_link: driveLink,
-    drive_error: driveError,
+    drive_file_id: storagePath,
+    drive_link: storageLink,
+    drive_error: storageError,
     table_count: TABLES.length,
     record_count: recordCount,
     warnings,
@@ -260,7 +198,7 @@ Deno.serve(async (req) => {
     status: finalStatus,
     backup_date: date,
     filename,
-    drive_link: driveLink,
+    storage_link: storageLink,
     record_count: recordCount,
     table_count: TABLES.length,
     warnings,
@@ -268,99 +206,6 @@ Deno.serve(async (req) => {
     email_sent: emailSent,
   });
 });
-
-// ── Google OAuth2 via service account JWT ──
-async function getGoogleToken(sa: any, scopes = ["https://www.googleapis.com/auth/drive.file"]): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const b64url = (s: string) =>
-    btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-
-  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = b64url(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: scopes.join(" "),
-      aud: "https://oauth2.googleapis.com/token",
-      exp: now + 3600,
-      iat: now,
-    })
-  );
-
-  const toSign = `${header}.${claim}`;
-  const pemKey = sa.private_key.replace(/\\n/g, "\n");
-  const keyDer = Uint8Array.from(
-    atob(
-      pemKey
-        .replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, "")
-    ),
-    (c) => c.charCodeAt(0)
-  );
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    keyDer.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(toSign)
-  );
-  const signature = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${toSign}.${signature}`,
-  });
-  const data = await res.json();
-  if (!data.access_token) throw new Error(`OAuth token error: ${JSON.stringify(data)}`);
-  return data.access_token;
-}
-
-// ── Find or create a Drive folder by name under a parent ──
-async function findOrCreateFolder(
-  token: string,
-  name: string,
-  parentId: string | null
-): Promise<string> {
-  const q = [
-    `name='${name}'`,
-    `mimeType='application/vnd.google-apps.folder'`,
-    `trashed=false`,
-    parentId ? `'${parentId}' in parents` : "",
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
-  const search = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const sd = await search.json();
-  if (sd.files?.length) return sd.files[0].id;
-
-  const create = await fetch("https://www.googleapis.com/drive/v3/files", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name,
-      mimeType: "application/vnd.google-apps.folder",
-      ...(parentId ? { parents: [parentId] } : {}),
-    }),
-  });
-  const cd = await create.json();
-  if (!cd.id) throw new Error(`Failed to create Drive folder "${name}": ${JSON.stringify(cd)}`);
-  return cd.id;
-}
 
 // ── Send email via Resend ──
 async function sendEmail(subject: string, html: string): Promise<boolean> {
@@ -381,8 +226,13 @@ async function sendEmail(subject: string, html: string): Promise<boolean> {
         html,
       }),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`Resend error ${res.status}:`, body);
+    }
     return res.ok;
-  } catch {
+  } catch (e: any) {
+    console.error("Resend exception:", e.message);
     return false;
   }
 }
