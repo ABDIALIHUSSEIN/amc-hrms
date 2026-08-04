@@ -144,6 +144,37 @@ const PerfEngine = {
   },
 };
 
+/* ── PAYROLL ENGINE ── */
+const PayrollEngine = {
+  calc(e, p) {
+    const baseSalary      = parseFloat(p.baseSalary)      || e.salary    || 0;
+    const allowance       = parseFloat(p.allowance)       || e.allowance || 0;
+    const otHours         = parseFloat(p.otHours)         || 0;
+    const advance         = parseFloat(p.advance)         || 0;
+    const lateDeduction   = parseFloat(p.lateDeduction)   || 0;
+    const absentDeduction = parseFloat(p.absentDeduction) || 0;
+    const eidBonus        = parseFloat(p.eidBonus)        || 0;
+
+    // OT = base ÷ 22 days ÷ 8 hrs × 1.5
+    const otPay = Math.round(baseSalary / 22 / 8 * 1.5 * otHours * 100) / 100;
+    const grossEarnings = baseSalary + allowance + otPay + eidBonus - lateDeduction - absentDeduction;
+
+    // Tax: 4% (≤$3k), 6% (≤$6k), 8% (>$6k)
+    let tax = grossEarnings * (grossEarnings > 6000 ? 0.08 : grossEarnings > 3000 ? 0.06 : 0.04);
+    tax = Math.round(tax * 100) / 100;
+
+    const advanceDeduct   = Math.min(advance, baseSalary * 0.5);
+    const totalDeductions = Math.round((tax + advanceDeduct) * 100) / 100;
+    const netPay          = Math.round((grossEarnings - totalDeductions) * 100) / 100;
+    const gratuity        = Math.round(baseSalary / 12 * 100) / 100; // monthly accrual
+
+    return { baseSalary, allowance, otHours, otPay, eidBonus,
+             lateDeduction, absentDeduction, grossEarnings,
+             tax, advanceDeduct, totalDeductions, netPay, gratuity };
+  },
+  maxAdvance(salary) { return (salary || 0) * 0.5; },
+};
+
 /* ─────────────────────────────────────────────
    INIT
 ───────────────────────────────────────────── */
