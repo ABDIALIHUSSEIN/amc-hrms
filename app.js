@@ -120,6 +120,7 @@ function getDeptName(id) { return DB.departments.find(d => d.id === id)?.name ||
 function getSubName(id)  { return DB.subsidiaries.find(s => s.id === id)?.name || id || '—'; }
 function getTeamName(id) { return DB.teams.find(t => t.id === id)?.name || '—'; }
 function getEmp(id)      { return DB.employees.find(e => e.id === id) || null; }
+function getCurrentEmployee() { return STATE.user?.empId ? getEmp(STATE.user.empId) : null; }
 
 /* ── PERFORMANCE ENGINE ── */
 const PerfEngine = {

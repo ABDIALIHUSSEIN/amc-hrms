@@ -90,6 +90,10 @@ const SupaSync = {
     } finally {
       this.loading = false;
       updateSupaStatus(this.connected ? 'connected' : 'offline');
+      if (this.connected) {
+        if (typeof updateNavBadges === 'function') updateNavBadges();
+        if (STATE.page && typeof nav === 'function') nav(STATE.page);
+      }
     }
   },
 
